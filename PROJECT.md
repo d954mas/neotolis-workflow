@@ -15,7 +15,8 @@ requiring its milestone and roadmap layer.
 ## Confirmed constraints
 
 - Support both Claude Code and Codex.
-- Work inside a dedicated gitignored directory in each consumer project.
+- Store workflow runtime data in `.ntworkflow/`, gitignored in each consumer
+  project. Do not use `.planning/`, which belongs to GSD.
 - Keep durable context, specifications, plans, handoffs, session logs, tool
   usage, token usage, and derived metrics on local disk.
 - Start every major phase in a fresh main session.
