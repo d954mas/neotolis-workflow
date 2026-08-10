@@ -2,7 +2,7 @@
 
 ## Status
 
-Design discovery. Implementation has not started.
+Contract design confirmed. Implementation planning is next; implementation has not started.
 
 ## Goal
 
@@ -15,10 +15,11 @@ requiring its milestone and roadmap layer.
 ## Confirmed constraints
 
 - Support both Claude Code and Codex.
-- Store workflow runtime data in `.ntworkflow/`, gitignored in each consumer
-  project. Do not use `.planning/`, which belongs to GSD.
-- Keep durable context, specifications, plans, handoffs, session logs, tool
-  usage, token usage, and derived metrics on local disk.
+- Store workflow runtime data in `.ntworkflow/`. Whether that directory is
+  tracked or ignored by Git is entirely the user's choice. Do not use
+  `.planning/`, which belongs to GSD.
+- Keep durable current state, specifications, plans, task packets, and session
+  telemetry on local disk. Derive metrics on demand.
 - Start every major phase in a fresh main session.
 - Use a set of phase skills rather than one monolithic skill.
 - Let each phase skill validate workflow state before it runs.
@@ -30,16 +31,12 @@ requiring its milestone and roadmap layer.
 - Keep milestone management outside this workflow.
 - Accept a task from text, an issue, or both.
 
-## Candidate phases
+## Confirmed public surface
 
-1. Intake and repository research
-2. Grilling
-3. Research and planning
-4. Implementation
-5. Review
-6. Optional reflection
+The six skills are `nttask`, `ntgrill`, `ntplan`, `ntwork`, `ntstats`, and
+`ntreflect`. Review is part of `ntwork`; `delivery-ready` is passive.
 
-## Agent configuration hypothesis
+## Agent configuration contract
 
 Each phase has a primary agent: the agent running the current user-facing chat.
 That agent owns the phase result. For example, the primary planning agent reads
@@ -52,46 +49,23 @@ code-quality review, security review, and test/result analysis. They return
 evidence and findings; they do not silently replace the primary agent's
 canonical artifact.
 
-Logical roles are provider-neutral. Provider adapters map a role to the runtime
-fields supported by Claude Code or Codex.
+Phase contracts name the few supporting roles they need and bound each role's
+scope. Each provider supplies those roles in its native agent format, including
+model and effort settings. The runtime validates availability but has no shared
+role schema, model translation, per-invocation profiles, or implicit fallback.
 
-Illustrative shape only; the schema is not approved:
-
-```yaml
-phases:
-  plan:
-    agents:
-      researcher:
-        codex:
-          model: gpt-5.6-terra
-          reasoning_effort: high
-        claude:
-          model: sonnet
-          effort: high
-      plan-critic:
-        codex:
-          model: gpt-5.6-sol
-          reasoning_effort: xhigh
-        claude:
-          model: opus
-          effort: xhigh
-```
-
-Defaults, inheritance, overrides, fallback behavior, and exact role boundaries
-remain design decisions for the grilling phase.
-
-## Architectural hypothesis
+## Architecture
 
 - Phase skills own phase behavior and their supporting-agent topology.
 - The primary agent owns synthesis, user interaction, and canonical outputs.
-- The CLI owns state, transition validation, session identity, artifact
-  registration, and reports.
-- Provider adapters own process launch, model/effort translation, transcript
-  discovery, and normalized telemetry.
+- The CLI owns current state, legal-transition validation, artifact validation
+  at phase boundaries, and telemetry queries.
+- Provider adapters expose native identity, plugin and CLI discovery,
+  transcript/session integration, and telemetry normalization. Supporting
+  agents are invoked through each provider's native subagent mechanism.
 - Canonical artifacts stay small and are loaded by the next phase.
 - Raw transcripts and tool outputs remain audit-only unless explicitly opened.
-- A status/resume skill may exist as a convenience, but no central orchestrator
-  skill is required for correctness.
+- No central orchestrator skill is required for correctness.
 
 ## Quality target
 
