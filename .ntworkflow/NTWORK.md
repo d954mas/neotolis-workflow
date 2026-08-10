@@ -184,6 +184,17 @@ After Nyquist PASS, one read-only `spec-integration-reviewer` and one read-only
 `code-reviewer` independently inspect the same current pull-request revision.
 Neither verdict can mask the other.
 
+### Shared review evidence
+
+For each task or final review boundary, the primary assembles one temporary,
+revision-specific evidence packet containing the applicable SPEC, PLAN and task
+references, base and current revision, complete relevant diff reference,
+concise executed verification evidence, required CI status, and unresolved
+findings. Every reviewer of that boundary receives the same packet plus only
+its role-specific review lens. Reviewers do not independently reconstruct the
+diff or verification history. The packet is invocation-local audit input, not
+a canonical artifact, report, registry entry, or durable workflow state.
+
 ## Scope and amendment
 
 `ntwork` owns implementation details, local instruction errors, necessary file
@@ -326,16 +337,18 @@ whole-plan validation
 -> required CI
 ```
 
-All final PASS results must apply to one current pull-request head. Any project
-change that affects a gate invalidates that gate and every downstream gate. For
-simplicity, any production-code or test change after finalization begins
-restarts the complete final sequence.
+All final PASS results must apply to one current pull-request head. An in-scope
+Nyquist, CI, or final-review finding receives a fresh bounded implementer call
+for the affected task or integration boundary. During the fix loop, the primary
+runs the affected focused or cumulative verification and a scoped re-review of
+the finding and fix diff instead of restarting the complete final sequence
+after every small correction.
 
-An in-scope Nyquist, CI, or final-review finding receives a fresh bounded
-implementer call for the affected task or integration boundary. The primary
-agent decides the fix, runs verification, obtains the applicable review, and
-commits it. There is no separate fixer role or arbitrary round limit. The same
-material blocker recurring without progress stops for the user.
+When all current findings are resolved and no fix is pending, the complete
+final sequence runs once on the resulting head. A new finding may reopen the
+bounded fix loop, followed by another complete final sequence on the next
+candidate head. There is no separate fixer role or arbitrary round limit. The
+same material blocker recurring without progress stops for the user.
 
 ## Interruption and re-entry
 

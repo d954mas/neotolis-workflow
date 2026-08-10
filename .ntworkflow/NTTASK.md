@@ -15,6 +15,12 @@ constraints, and the observable top-level result.
 It does not resolve product, UX, API, architecture, or implementation choices.
 Those decision branches belong to `ntgrill`.
 
+Neotolis Workflow is intended only for large, complex, or decision-heavy work.
+Small, routine, or already well-scoped changes belong to a lightweight process
+outside this workflow. `nttask` is not a task-size classifier and offers no
+quick path: invoking it means the user has deliberately selected the complete
+rigorous Neotolis lifecycle.
+
 ## Invocation and run lifecycle
 
 - A non-empty task starts intake. An empty invocation asks what the user wants

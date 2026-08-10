@@ -7,9 +7,10 @@
 ## Goal
 
 Provide an installable, provider-neutral development workflow for Claude Code
-and Codex that carries a free-form task through context gathering, grilling,
-research-backed planning, task execution, review, telemetry, and optional
-reflection while preserving durable local state between fresh sessions.
+and Codex that carries a large, complex, or decision-heavy development task
+through context gathering, grilling, research-backed planning, task execution,
+review, telemetry, and optional reflection while preserving durable local
+state between fresh sessions.
 
 ## Background
 
@@ -107,6 +108,11 @@ the public workflow small and milestone-agnostic.
 
 **Out of scope:**
 
+- Small, routine, or already well-scoped changes that do not justify the full
+  planning and review lifecycle. These use the provider's normal lightweight
+  coding flow or another process outside Neotolis Workflow. Version 1 has no
+  quick mode, task-size classifier, or reduced-gate path; invoking nttask
+  means deliberately choosing the complete rigorous workflow.
 - Milestones, roadmaps, portfolio management, and cross-project orchestration — owned by systems above this workflow.
 - GitHub, Google Docs, Linear, Jira, or other task-source adapters — links remain ordinary user-provided context.
 - A user-facing `ntworkflow` CLI — the CLI is an internal agent contract.
@@ -119,6 +125,24 @@ the public workflow small and milestone-agnostic.
 
 ## Constraints
 
+- The workflow targets large, complex, or decision-heavy tasks only. It does
+  not optimize its phases or gates for small changes and does not route them
+  through an internal fast path.
+- Common state-shape, lifecycle, ownership, blocker, and protected-artifact
+  checks are implemented once in the CLI. Phase skills consume and narrate the
+  structured result rather than duplicating those checks in prompt logic.
+- Reviewers at the same task or final boundary receive one shared temporary,
+  revision-specific evidence packet plus their distinct role lenses. During a
+  final fix loop, only affected verification and scoped re-review repeat after
+  each correction; once current findings are resolved, the complete final
+  sequence runs once on the resulting pull-request head.
+- Universal time, token, cost, and task-size budgets are intentionally absent.
+  Runs differ materially in scope, so one fixed limit would be arbitrary and
+  could stop valid work. Operational telemetry informs human judgment instead
+  of enforcing a universal ceiling.
+- Deterministic CI verifies runtime code, state transitions, schemas, provider
+  adapters, file operations, and telemetry aggregation. It does not attempt to
+  prove the quality of skills or model outputs, which are nondeterministic.
 - Major state-changing phases start in fresh primary sessions. The read-only
   `ntstats` and `ntreflect` queries may run in the current session.
 - The primary agent remains responsible for canonical phase artifacts.

@@ -33,6 +33,14 @@ work record
 telemetry ingest | query
 ```
 
+Every state-changing operation uses one shared CLI preflight implementation
+for exact state shape, legal lifecycle, ownership, blockers, and protected
+artifact availability. Phase skills do not reproduce those common checks.
+They supply the current native session identity and requested operation, then
+narrate the CLI's structured success or failure, including the actual state,
+reason, and correct next action. Phase-specific reasoning and semantic gates
+remain owned by the phase skill.
+
 Artifact checks are part of the transitions they protect. `plan validate`
 remains separate because `ntplan` requires the same complete-set validation
 before critic review and before approval. There is no generic `set-state`,

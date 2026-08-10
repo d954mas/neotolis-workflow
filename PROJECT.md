@@ -12,6 +12,17 @@ Pocock's skills, and the measured workflow in `game-67-idle`.
 The workflow must preserve GSD's ordered phases and review discipline without
 requiring its milestone and roadmap layer.
 
+## Scope boundary
+
+Neotolis Workflow is deliberately a rigorous workflow for large, complex, or
+decision-heavy development tasks whose planning, execution, and verification
+benefit from durable state, fresh sessions, and independent review.
+
+Small, routine, or already well-scoped changes are outside this workflow. They
+should use the provider's normal lightweight coding flow or another suitable
+process. Neotolis does not provide a quick path and does not weaken its phase
+contracts for small work; invoking it means choosing the full rigorous flow.
+
 ## Confirmed constraints
 
 - Support both Claude Code and Codex.
@@ -30,6 +41,12 @@ requiring its milestone and roadmap layer.
   arbitrary individual invocations.
 - Keep milestone management outside this workflow.
 - Accept a task from text, an issue, or both.
+- Do not impose universal time, token, cost, or task-size budgets. The workflow
+  handles tasks with materially different scopes, and correctness gates must
+  not depend on one arbitrary limit.
+- Keep deterministic tests focused on workflow code, state, adapters, and data
+  contracts. Skill and model output quality is nondeterministic and is not a
+  deterministic CI gate.
 
 ## Confirmed public surface
 
@@ -69,7 +86,8 @@ role schema, model translation, per-invocation profiles, or implicit fallback.
 
 ## Quality target
 
-The workflow should be materially simpler than GSD while retaining:
+For the large tasks it targets, the workflow should be materially simpler than
+GSD while retaining:
 
 - explicit phase gates;
 - isolated research, planning, and criticism where useful;
