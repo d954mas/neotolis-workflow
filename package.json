@@ -1,0 +1,26 @@
+{
+  "name": "@neotolis/workflow",
+  "version": "0.0.0",
+  "description": "Provider-neutral development workflow for Claude Code and Codex",
+  "type": "module",
+  "engines": {
+    "node": "^24.0.0"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "check": "npm run typecheck && npm run lint",
+    "lint": "eslint .",
+    "test": "node scripts/run-tests.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@anthropic-ai/claude-code": "2.1.220",
+    "@eslint/js": "10.0.1",
+    "@openai/codex": "0.144.6",
+    "@types/node": "24.13.3",
+    "esbuild": "0.28.2",
+    "eslint": "10.8.1",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.67.0"
+  }
+}
