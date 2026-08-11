@@ -1,5 +1,10 @@
-import { parseArguments } from './arguments.ts';
-import { EXIT_CODES } from '../core/errors.ts';
+import { operationForArguments, parseArguments } from './arguments.ts';
+import type {
+  CliArguments,
+  RunArguments,
+  StatusArguments,
+} from './arguments.ts';
+import { ERROR_CODES, EXIT_CODES, WorkflowError } from '../core/errors.ts';
 import {
   createFailureResponse,
   createSuccessResponse,
@@ -9,6 +14,7 @@ import type { NextAction, NextSkill } from '../core/protocol.ts';
 import type { State } from '../core/state.ts';
 import { readPreflight } from '../runtime/preflight.ts';
 import { resolveProjectRoot } from '../runtime/project-root.ts';
+import { cancelRun, completeRun, startRun } from '../runtime/run.ts';
 
 const INVALID_INPUT_ACTION = action(null, 'Correct the CLI input and retry.');
 const STATUS_FAILURE_ACTION = action(
@@ -18,6 +24,10 @@ const STATUS_FAILURE_ACTION = action(
 const INTERNAL_FAILURE_ACTION = action(
   null,
   'Inspect the internal failure and retry.',
+);
+const RUN_FAILURE_ACTION = action(
+  null,
+  'Resolve the reported run failure before retrying.',
 );
 
 function action(skill: NextSkill, instruction: string): NextAction {
@@ -82,14 +92,69 @@ async function contextForInvalidArguments(argv: readonly string[]): Promise<{
   }
 }
 
+interface CommandResult {
+  readonly projectRoot: string;
+  readonly state: State | null;
+  readonly warnings: readonly string[];
+}
+
+async function executeStatus(parsed: StatusArguments): Promise<CommandResult> {
+  const preflight = await readPreflight(parsed.cwd);
+  return {
+    projectRoot: preflight.projectRoot,
+    state: preflight.state,
+    warnings: [],
+  };
+}
+
+async function executeRun(parsed: RunArguments): Promise<CommandResult> {
+  const projectRoot = await resolveProjectRoot(parsed.cwd);
+  const input = { sessionId: parsed.sessionId };
+  let result: Awaited<ReturnType<typeof startRun>>;
+
+  switch (parsed.operation) {
+    case 'start':
+      result = await startRun(projectRoot, input);
+      break;
+    case 'cancel':
+      result = await cancelRun(projectRoot, {
+        ...input,
+        userConfirmed: parsed.userConfirmed,
+      });
+      break;
+    case 'complete':
+      result = await completeRun(projectRoot, {
+        ...input,
+        userConfirmed: parsed.userConfirmed,
+      });
+      break;
+  }
+
+  return {
+    projectRoot,
+    state: result.state,
+    warnings: result.warnings,
+  };
+}
+
+function executeCommand(parsed: CliArguments): Promise<CommandResult> {
+  return parsed.command === 'status'
+    ? executeStatus(parsed)
+    : executeRun(parsed);
+}
+
+function operationForCommand(parsed: CliArguments): string {
+  return parsed.command === 'status' ? parsed.command : `run ${parsed.operation}`;
+}
+
 async function execute(argv: readonly string[]): Promise<number> {
-  let parsed: ReturnType<typeof parseArguments>;
+  let parsed: CliArguments;
   try {
     parsed = parseArguments(argv);
   } catch (error) {
     const context = await contextForInvalidArguments(argv);
     const response = createFailureResponse({
-      operation: suppliedCwd(argv) === null ? 'unknown' : (argv[2] ?? 'unknown'),
+      operation: operationForArguments(argv),
       projectRoot: context.projectRoot,
       state: context.state,
       nextAction: INVALID_INPUT_ACTION,
@@ -100,30 +165,37 @@ async function execute(argv: readonly string[]): Promise<number> {
     return response.error.exit_code;
   }
 
-  let projectRoot = '';
-
   try {
-    const preflight = await readPreflight(parsed.cwd);
-    projectRoot = preflight.projectRoot;
-    const state = preflight.state;
+    const result = await executeCommand(parsed);
     const response = createSuccessResponse({
-      operation: parsed.command,
-      projectRoot,
-      state,
-      nextAction: nextActionFor(state),
-      warnings: [],
+      operation: operationForCommand(parsed),
+      projectRoot: result.projectRoot,
+      state: result.state,
+      nextAction: nextActionFor(result.state),
+      warnings: result.warnings,
     });
     process.stdout.write(serializeResponse(response));
     return response.ok ? EXIT_CODES.SUCCESS : response.error.exit_code;
   } catch (error) {
-    if (projectRoot.length === 0) {
-      projectRoot = await resolvedRootOrEmpty(parsed.cwd);
+    let projectRoot = await resolvedRootOrEmpty(parsed.cwd);
+    let state: State | null = null;
+    try {
+      const preflight = await readPreflight(parsed.cwd);
+      projectRoot = preflight.projectRoot;
+      state = preflight.state;
+    } catch {
+      // Preserve the primary failure when current state cannot be read.
     }
+    const isStatus = parsed.command === 'status';
     const response = createFailureResponse({
-      operation: parsed.command,
+      operation: operationForCommand(parsed),
       projectRoot,
-      state: null,
-      nextAction: STATUS_FAILURE_ACTION,
+      state,
+      nextAction: isStatus
+        ? STATUS_FAILURE_ACTION
+        : error instanceof WorkflowError && error.code === ERROR_CODES.ILLEGAL_TRANSITION
+          ? nextActionFor(state)
+          : RUN_FAILURE_ACTION,
       warnings: [],
       error,
     });

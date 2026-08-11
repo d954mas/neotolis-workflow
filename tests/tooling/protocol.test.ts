@@ -133,11 +133,19 @@ test('maps every stable workflow error code into the response and JSON line', ()
       exit_code: number;
     };
 
-    assert.equal(workflowError.exitCode, EXIT_CODES[name as keyof typeof EXIT_CODES]);
     assert.equal(response.error.exit_code, workflowError.exitCode);
     assert.equal(serializedError.code, code);
     assert.equal(serializedError.exit_code, workflowError.exitCode);
   }
+});
+
+test('maps PARTIAL_RUN to the existing exit class 15', () => {
+  const error = new WorkflowError({
+    code: ERROR_CODES.PARTIAL_RUN,
+    message: 'Partial run directory exists.',
+  });
+
+  assert.equal(error.exitCode, EXIT_CODES.LOCK_CONFLICT);
 });
 
 test('normalizes caught errors without exposing a stack trace', () => {

@@ -21,7 +21,7 @@ interface BuiltErrors {
   WorkflowError: new (options: {
     code: string;
     message: string;
-  }) => Error;
+  }) => Error & { readonly exitCode: number };
 }
 
 interface BuiltProtocol {
@@ -96,18 +96,19 @@ test('built modules preserve workflow error identity and stable exit codes', asy
   ) as BuiltProtocol;
 
   for (const [name, code] of Object.entries(errors.ERROR_CODES)) {
+    const error = new errors.WorkflowError({ code, message: name });
     const response = protocol.createFailureResponse({
       operation: 'test',
       projectRoot: '/work/project',
       state: null,
       nextAction: { skill: null, instruction: 'None.' },
       warnings: [],
-      error: new errors.WorkflowError({ code, message: name }),
+      error,
     });
 
     assert.deepEqual(response.error, {
       code,
-      exit_code: errors.EXIT_CODES[name],
+      exit_code: error.exitCode,
       message: name,
       details: null,
     });

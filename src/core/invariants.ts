@@ -35,12 +35,17 @@ function requireNonEmpty(value: string, path: string): void {
   if (value.length === 0) workflowStateError(path, 'non-empty string');
 }
 
-function sessionProvider(sessionId: string, path: string): Provider {
+export function providerForSessionId(sessionId: string): Provider | null {
   const match = SESSION_ID_PATTERN.exec(sessionId);
-  if (match === null) {
+  return match === null ? null : match[1] as Provider;
+}
+
+function sessionProvider(sessionId: string, path: string): Provider {
+  const provider = providerForSessionId(sessionId);
+  if (provider === null) {
     workflowStateError(path, 'canonical claude:<native-id> or codex:<native-id> session ID');
   }
-  return match[1] as Provider;
+  return provider;
 }
 
 function validateRunIdentity(state: State, current: Current): void {
