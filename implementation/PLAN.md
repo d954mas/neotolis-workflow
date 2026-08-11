@@ -29,6 +29,7 @@ Every task agent must:
 7. Run all packet verification after dependencies are present.
 8. Create one dedicated commit for the packet.
 9. Report commit ID, changed files, verification results, deviations, and blockers, then stop.
+10. Do not turn execution order or inferred "impossible states" into parser requirements unless an authoritative contract explicitly does.
 
 No separate handoff artifact is created. Source, tests, commit, and the agent's final report are the handoff evidence.
 

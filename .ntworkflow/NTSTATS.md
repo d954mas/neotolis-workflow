@@ -53,7 +53,8 @@ nttask -> ntgrill -> ntplan -> ntwork -> delivery-ready -> work-complete
 
 `delivery-ready` is a passive workflow phase, not a second state inside
 `ntwork`. It has no public skill or canonical artifact. `ntwork` enters it only
-after handing off the ready pull request with its required gates complete.
+after every applicable quality and delivery gate is complete. A pull request
+may be present but is not required by the lifecycle.
 
 During `delivery-ready`, the user chooses whether to perform manual review,
 invoke any agents or skills, change code, and run checks. Neotolis does not

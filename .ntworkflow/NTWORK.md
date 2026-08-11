@@ -9,9 +9,9 @@
 
 ## Purpose
 
-`ntwork` implements one approved plan in its recorded stable order, proves the
-result with fresh evidence, obtains independent test and code review, and
-delivers the complete work through one pull request.
+`ntwork` implements one approved plan in its recorded stable order, verifies
+the result with fresh evidence, obtains independent test and code review, and
+leaves the work ready for the user's delivery path.
 
 The primary user-facing agent owns every decision, task acceptance, canonical
 execution result, commit, and delivery action. Supporting agents receive
@@ -70,8 +70,8 @@ rewrite the approved artifacts during ordinary execution.
 - at least one task exists;
 - the current session can acquire sole phase ownership;
 - the repository is on a normal branch rather than detached HEAD; and
-- the assigned implementation branch and pull-request identity, when already
-  present, are unambiguous.
+- the recorded branch and pull-request identity, when present, still identify
+  the current work.
 
 The phase may read the approved artifacts, repository instructions, relevant
 repository files, tests, Git and pull-request state, and sources needed to
@@ -83,17 +83,13 @@ append telemetry.
 It does not repeat normal planning research, criticism, or approval. The sole
 exception is the explicitly user-authorized amendment path defined below.
 
-## Dedicated branch and pull request
+## Git working context and optional delivery
 
-The first legal invocation works in the current checkout and creates one
-dedicated branch from the currently checked-out branch:
-
-```text
-ntwork/NT-007-<short-spec-slug>
-```
-
-The source branch becomes the pull-request base. The chosen implementation
-branch is stored once and cannot change after the first task commit.
+`ntwork` works in the current checkout and records the current branch before
+the first task commit. By default it does not require a dedicated branch, push,
+pull request, hosting provider, or CI. When the user, repository, or approved
+plan requires one, the primary performs that delivery action and records its
+identity when applicable.
 
 `ntwork` does not create a Git worktree unless the user explicitly requests
 one. It never stashes, cleans, resets, rebases, force-pushes, or resolves a Git
@@ -104,11 +100,11 @@ can be included. They must fit an approved packet; otherwise the amendment path
 is required. Workflow-owned `.ntworkflow/` changes do not by themselves block
 execution, but they are never staged into task commits automatically.
 
-After the first task commit, `ntwork` pushes the branch and creates one draft
-pull request for the whole work. Later task and fix commits update that same
-pull request. Re-entry reuses the exact assigned branch and matching open pull
-request. A duplicate, mismatched, closed-unmerged, or externally replaced pull
-request blocks delivery for a user decision.
+When a pull request is used, one pull request carries the whole work. Later
+task and fix commits update it, and re-entry reuses it while its recorded
+identity still matches. A pull-request mismatch blocks only that delivery path
+for a user decision; absence of a pull request is valid only when none is
+required.
 
 ## Modes, readiness, and order
 
@@ -137,7 +133,8 @@ The primary agent owns:
 - inspection of the resulting diff;
 - canonical verification evidence;
 - finding adjudication and amendment decisions;
-- task completion, commits, branch, pull request, and workflow status; and
+- task completion, commits, Git working context, optional delivery, and
+  workflow status; and
 - final synthesis and delivery reporting.
 
 ### Task implementer
@@ -180,20 +177,17 @@ edit files, fix findings, change scope, commit, or close the task.
 
 ### Final reviewers
 
-After Nyquist PASS, one read-only `spec-integration-reviewer` and one read-only
-`code-reviewer` independently inspect the same current pull-request revision.
-Neither verdict can mask the other.
+After whole-plan validation, the read-only `nyquist-auditor`,
+`spec-integration-reviewer`, and `code-reviewer` independently inspect the same
+current revision. They may run in parallel. Each returns its own verdict; no
+verdict can mask another.
 
-### Shared review evidence
+### Review inputs
 
-For each task or final review boundary, the primary assembles one temporary,
-revision-specific evidence packet containing the applicable SPEC, PLAN and task
-references, base and current revision, complete relevant diff reference,
-concise executed verification evidence, required CI status, and unresolved
-findings. Every reviewer of that boundary receives the same packet plus only
-its role-specific review lens. Reviewers do not independently reconstruct the
-diff or verification history. The packet is invocation-local audit input, not
-a canonical artifact, report, registry entry, or durable workflow state.
+For each task or final review boundary, the primary gives every applicable
+reviewer the same current revision, relevant approved artifacts and diff, and
+concise verification results, plus the reviewer's own lens. This input is not
+a new artifact or durable evidence packet.
 
 ## Scope and amendment
 
@@ -237,7 +231,8 @@ For each ready task, the primary agent:
 8. creates one dedicated primary task commit after both verdicts PASS;
 9. verifies that all task project changes are committed while workflow-runtime
    dirt remains excluded;
-10. pushes the commit and creates or updates the one draft pull request; and
+10. pushes or updates the pull request only when that delivery path is in use;
+    and
 11. marks the task completed.
 
 The implementer's own focused checks are useful author feedback but are not a
@@ -279,11 +274,11 @@ procedure, current revision, result, and expected condition concisely in
 execution status. Raw logs remain audit data. No standalone validation artifact
 is created.
 
-## Pull-request CI
+## CI when required
 
-CI runs on the accumulating draft pull request without making every successful
-run a task checkpoint. `ntwork` does not wait for a pending CI run before
-starting the next task.
+When the user, repository, or approved plan requires CI, it runs on the
+accumulating work without making every successful run a task checkpoint.
+`ntwork` does not wait for a pending run before starting the next task.
 
 If required CI becomes known to be red, the current active task may reach its
 normal boundary, but no new task starts. The primary agent maps the finding to
@@ -292,9 +287,10 @@ implementer for that finding, runs applicable verification and task review,
 commits the fix, and resumes stable-order execution. Fix work never runs in
 parallel with an active task implementer.
 
-Required CI must PASS on the final current pull-request head before
-`delivery-ready`. Conflicting or materially flaky evidence cannot become PASS
-merely through retries; it must be fixed or reported as a blocker.
+Required CI must PASS on the final current revision before `delivery-ready`.
+When no CI is required, the CI gate is satisfied without creating a pull
+request. Conflicting or materially flaky evidence cannot become PASS merely
+through retries; it must be fixed or reported as a blocker.
 
 ## Whole-plan validation
 
@@ -331,23 +327,20 @@ The final order is:
 
 ```text
 whole-plan validation
--> Nyquist audit
--> specification/integration review and code review
--> mark pull request ready
--> required CI
+-> independent Nyquist, specification/integration, and code reviews
+-> required CI, when configured
+-> delivery-ready
 ```
 
-All final PASS results must apply to one current pull-request head. An in-scope
-Nyquist, CI, or final-review finding receives a fresh bounded implementer call
-for the affected task or integration boundary. During the fix loop, the primary
-runs the affected focused or cumulative verification and a scoped re-review of
-the finding and fix diff instead of restarting the complete final sequence
-after every small correction.
+The three read-only final reviews may run in parallel on the same current
+revision. All applicable final PASS results must apply to that revision. An
+in-scope review or CI finding receives one fresh bounded implementer call for
+the affected task or integration boundary, followed by affected verification
+and review.
 
-When all current findings are resolved and no fix is pending, the complete
-final sequence runs once on the resulting head. A new finding may reopen the
-bounded fix loop, followed by another complete final sequence on the next
-candidate head. There is no separate fixer role or arbitrary round limit. The
+When no finding or fix remains, the complete final gate runs once on the
+resulting revision. A later change invalidates that candidate and requires one
+new final gate. There is no separate fixer role or arbitrary round limit. The
 same material blocker recurring without progress stops for the user.
 
 ## Interruption and re-entry
@@ -355,11 +348,11 @@ same material blocker recurring without progress stops for the user.
 Only the lifecycle of one active task may continue after interruption. This
 includes its implementation, fix, verification, task review, commit, push, or
 remote-only evidence wait. A fresh primary session validates sole ownership,
-the assigned branch and pull request, execution status, and the actual diff,
-then uses a fresh implementer if more code changes are required.
+execution status, the current branch, any recorded pull request, and the actual
+diff, then uses a fresh implementer if more code changes are required.
 
 Completed tasks are not rerun. A completed durable action on an unchanged task
-revision, such as an existing commit, push, or matching pull request, is reused
+revision, such as an existing commit, push, or recorded pull request, is reused
 rather than duplicated. An unfinished task verdict or a verdict invalidated by
 later changes is rerun.
 
@@ -372,10 +365,10 @@ durable project diff.
 
 ## Repeated invocation and errors
 
-Re-entry is idempotent: before creating or changing a branch, commit, push, or
-pull request, the primary agent checks whether the exact expected result already
-exists and reuses it. A mismatched or duplicate external result blocks rather
-than being silently replaced.
+Re-entry is idempotent: before creating a commit or performing an optional
+delivery action, the primary checks recorded state and current Git or hosting
+state, then reuses an existing matching result. Ambiguity blocks the affected
+action rather than being silently guessed.
 
 Ordinary product, test, build, integration, or review failures inside approved
 scope enter the bounded fix loop. The invocation stops with the concrete reason
@@ -383,8 +376,9 @@ when required evidence cannot be obtained, evidence conflicts, an authority or
 state invariant is violated, or safe progress requires a user decision. This
 includes invalid current state, unreadable artifacts, unavailable required
 evidence, actual failure to launch a configured required role, concurrent
-ownership, out-of-order selection, branch or pull-request mismatch, material
-flakiness, tool or authentication failure, and unresolved Git conflicts.
+ownership, out-of-order selection, a mismatch in the active Git or delivery
+context, material flakiness, tool or authentication failure, and unresolved
+Git conflicts.
 
 There is no proactive model-availability ceremony, implicit model fallback,
 automatic repair, migration, destructive Git recovery, plan mutation, or scope
@@ -408,32 +402,32 @@ Blocked: <reason>
 
 Before delivery, the primary agent shows one concise current-revision summary:
 task completion, whole-plan validation, Nyquist, both final reviews, required
-CI, and the pull-request link. Raw tool output and full agent reports appear
-only on request.
+CI, and the pull-request link when present. Raw tool output and full agent
+reports appear only on request.
 
-After final reviews, the pull request is marked ready and required ready-state
-CI must PASS. Only then does the run enter `delivery-ready`.
+After final reviews and any required CI pass, the run enters `delivery-ready`.
+When a pull request is required, the primary marks it ready as the final
+delivery action.
 
 `ntwork` never merges merely because gates passed. Its authority ends at
 `delivery-ready`. During that passive phase the user decides what review,
 checks, fixes, or delivery actions to perform; the workflow neither governs nor
-validates them. Version 1 always uses the single pull-request path; `ntwork`
-never direct-merges.
+validates them.
 
 ## Completion gates
 
-`delivery-ready` requires all of the following on the same current pull-request
-head:
+`delivery-ready` requires all applicable results on the same current revision:
 
 1. every approved task is completed in stable order;
 2. every task has its primary commit and fresh task evidence;
-3. no known CI, scope, ownership, state, or artifact blocker remains;
+3. no known scope, ownership, state, artifact, or required-CI blocker remains;
 4. whole-plan validation passed;
 5. Nyquist returned PASS;
 6. specification/integration review returned PASS;
 7. code review returned PASS;
-8. the pull request is ready rather than draft; and
-9. every required CI check passed.
+8. every configured required CI check passed; and
+9. every delivery action required by the user, repository, or approved plan is
+   complete, including a ready pull request when one is required.
 
 `delivery-ready` is the completion boundary of `ntwork`. Closing the passive
 phase as `work-complete` belongs to the cross-cutting lifecycle and requires
@@ -457,17 +451,8 @@ task; it never depends on automated merge inspection.
 - Nyquist reports test gaps but never edits code or tests.
 - A final code or test fix restarts validation, Nyquist, both final reviews, and
   required CI.
-- The one pull request remains draft until the final review gates pass and does
-  not merge without explicit user action.
+- A dedicated branch, push, pull request, and hosted CI are used only when
+  required by the user, repository, or approved plan; their absence otherwise
+  does not weaken the review gates.
 - Invalid state, concurrent ownership, conflicting evidence, missing required
   evidence, or an external mismatch stops without silent recovery.
-
-## Reference synthesis
-
-The contract uses fresh task contexts and task review from Superpowers while
-keeping primary-agent ownership; Matt Pocock's independently verifiable tickets
-and separate specification and standards lenses; GSD's cumulative verification,
-Nyquist concern, and evidence-backed delivery; and Spec Kit's staged execution
-and convergence checks. It rejects wave parallelism, strict TDD ordering,
-mutable execution checklists, advisory-only final verification, and additional
-coordination artifacts that do not protect a distinct failure mode.

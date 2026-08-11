@@ -14,6 +14,13 @@ reasoning and gates.
 The runtime is not an orchestrator, scheduler, replay engine, model router, or
 agent launcher.
 
+## Validation boundary
+
+**Strict at gates, permissive during progress.** Runtime state is a progress
+snapshot, not a proof system. Parsing checks only the declared shape and
+explicit structural invariants; phase operations own execution order and
+external Git, pull-request, CI, review, and evidence checks.
+
 ## Public and internal surfaces
 
 The public surface is exactly the six skills above. `ntworkflow` is an
@@ -282,19 +289,17 @@ An active `ntwork` task may resume only under the same provider. Read-only
 ## Interruption and re-entry
 
 Only one active `ntwork` task lifecycle may continue after interruption. A
-fresh primary validates ownership, state, the assigned branch and pull
-request, the actual diff, completed-task boundaries, and native Git or hosting
-identities before continuing. It uses a fresh implementer when more project
-changes are required.
+fresh primary validates ownership, state, the current branch, any recorded pull
+request, the actual diff, and completed-task boundaries before continuing. It
+uses a fresh implementer when more project changes are required.
 
 Interrupted intake, grilling, planning, amendment reasoning, whole-plan
 validation, Nyquist, final reviews, and delivery judgment restart from their
 last durable boundary. Partial reasoning is never resumed.
 
-Existing commit, push, or pull-request work is reused only when run ID, task
-ID, assigned branch, saved commit boundary, and native IDs prove one exact
-match. Missing or competing matches block; the runtime never creates a
-duplicate or selects the closest candidate.
+Existing commit, push, or pull-request work is reused when recorded state and
+the current Git or hosting state agree. Ambiguity blocks only the affected
+action; the runtime never guesses or creates a duplicate.
 
 ## Artifacts and amendment
 

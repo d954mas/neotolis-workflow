@@ -68,8 +68,8 @@ the public workflow small and milestone-agnostic.
 
 9. **One-task and all-task execution**: `ntwork` implements either all remaining ready tasks sequentially or exactly one ready task.
    - Current: No implementation workflow exists.
-   - Target: `ntwork` starts only from `plan-approved` with readable `.ntworkflow/runs/<run-id>/SPEC.md`, `.ntworkflow/runs/<run-id>/PLAN.md`, and task packets. It creates one dedicated implementation branch in the current checkout and executes tasks strictly in PLAN's stable order: `ntwork` or `ntwork all` processes all remaining tasks, `ntwork one` processes the next task, and `ntwork one <id>` succeeds only when `<id>` is that exact next task. A fresh bounded implementer writes each task while the primary agent owns decisions, canonical verification, review adjudication, status, and commits. Tests are mandatory for every testable behavior or logic change without requiring formal test-first TDD. One read-only task reviewer returns separate packet-compliance and code/test-quality verdicts. The first task commit opens one draft plan-level pull request; later task and linked fix commits update it while CI runs in the background. After all tasks, whole-plan validation, a read-only Nyquist audit, independent specification/integration review, code review, and required CI must PASS on the same current pull-request head. `ntwork` then enters the separate passive `delivery-ready` phase. The user controls any later review, fixes, and delivery; the workflow does not validate that work or inspect Git or GitHub for a merge.
-   - Acceptance: Wrong state, unreadable mandatory artifacts, out-of-order selection, concurrent ownership, or an external branch or pull-request mismatch blocks `ntwork` without silent repair or fallback. Each task requires its dedicated primary commit, fresh applicable tests and other verification, and both task-review verdicts; completed tasks are not rerun. CI does not delay a pending next task, but a known required CI failure stops the following task until a bounded non-parallel fix is verified, reviewed, committed, and pushed. After all tasks, PLAN's exact full-suite, build, check, benchmark, visual, and manual procedures run with fresh evidence. Delivery is blocked until the current head receives Nyquist PASS, specification/integration PASS, code-review PASS, and required CI PASS. In-scope findings are fixed by a bounded implementer under primary ownership. A finding that changes the approved contract pauses implementation and may change artifacts only after explicit user permission, structural validation, fresh independent criticism, and renewed approval. Any project change that affects a final gate invalidates that gate and downstream gates; any production-code or test change restarts the complete final sequence. No standalone validation artifact is created. The run reaches `delivery-ready` only with a ready pull request. It reaches `work-complete` when the user explicitly reports delivery or atomically when a new non-empty task starts, never through automated merge inspection.
+   - Target: `ntwork` starts only from `plan-approved` with readable `.ntworkflow/runs/<run-id>/SPEC.md`, `.ntworkflow/runs/<run-id>/PLAN.md`, and task packets. It executes tasks strictly in PLAN's stable order: `ntwork` or `ntwork all` processes all remaining tasks, `ntwork one` processes the next task, and `ntwork one <id>` succeeds only when `<id>` is that exact next task. A fresh bounded implementer writes each task while the primary owns decisions, canonical verification, review adjudication, status, and commits. Tests are mandatory for every testable behavior or logic change without requiring formal test-first TDD. One read-only task reviewer returns separate packet-compliance and code/test-quality verdicts. After all tasks, whole-plan validation is followed by independent read-only Nyquist, specification/integration, and code reviews on the same current revision; the three reviews may run in parallel. A dedicated branch, push, pull request, hosting integration, and CI are used only when required by the user, repository, or approved plan. `ntwork` then enters the separate passive `delivery-ready` phase.
+   - Acceptance: Wrong state, unreadable mandatory artifacts, out-of-order selection, concurrent ownership, or an ambiguity in an active Git or delivery action blocks `ntwork` without silent repair or fallback. Each task requires its dedicated primary commit, fresh applicable tests and other verification, and both task-review verdicts; completed tasks are not rerun. Required CI does not delay a pending next task, but a known failure stops the following task until a bounded non-parallel fix is verified, reviewed, and committed. After all tasks, PLAN's exact full-suite, build, check, benchmark, visual, and manual procedures run with fresh evidence. Delivery is blocked until the same current revision receives Nyquist PASS, specification/integration PASS, code-review PASS, and required CI PASS when CI is configured. In-scope findings are fixed by a bounded implementer under primary ownership; affected checks and review repeat during the fix, then the complete final gate runs once on the resulting revision. A finding that changes the approved contract pauses implementation and may change artifacts only after explicit user permission, structural validation, fresh independent criticism, and renewed approval. No standalone validation artifact or mandatory pull request is created. The user controls later delivery, and `work-complete` never depends on automated merge inspection.
 
 10. **Explicit authority and fail-early behavior**: Agents act only within authority granted by the invoked phase and approved artifacts.
    - Current: No enforceable authority boundary exists.
@@ -101,8 +101,8 @@ the public workflow small and milestone-agnostic.
 - Project-local current state, permanent run artifacts, tasks, and per-session telemetry.
 - Phase-owned native supporting-agent definitions with provider-specific model and reasoning or effort.
 - Sequential task execution with one-task and all-task modes.
-- Task-level review, read-only Nyquist audit, and final
-  specification/integration review.
+- Task-level review, read-only Nyquist audit, final specification/integration
+  review, and final code review.
 - Exact metrics when exposed by the provider and explicit unavailable markers otherwise.
 - Deterministic CI for workflow runtime code and data contracts.
 
@@ -131,11 +131,11 @@ the public workflow small and milestone-agnostic.
 - Common state-shape, lifecycle, ownership, blocker, and protected-artifact
   checks are implemented once in the CLI. Phase skills consume and narrate the
   structured result rather than duplicating those checks in prompt logic.
-- Reviewers at the same task or final boundary receive one shared temporary,
-  revision-specific evidence packet plus their distinct role lenses. During a
-  final fix loop, only affected verification and scoped re-review repeat after
-  each correction; once current findings are resolved, the complete final
-  sequence runs once on the resulting pull-request head.
+- Reviewers at the same task or final boundary receive the same current
+  revision, approved inputs, diff, and concise verification results plus their
+  distinct role lenses. During a final fix loop, only affected verification
+  and review repeat after each correction; once current findings are resolved,
+  the complete final gate runs once on the resulting revision.
 - Universal time, token, cost, and task-size budgets are intentionally absent.
   Runs differ materially in scope, so one fixed limit would be arbitrary and
   could stop valid work. Operational telemetry informs human judgment instead
@@ -166,12 +166,10 @@ the public workflow small and milestone-agnostic.
   task definitions; execution status is stored separately. An explicit
   user-authorized `ntwork` amendment is the only exception and requires renewed
   artifact validation, criticism, and approval.
-- Each approved plan uses one dedicated implementation branch in the current
-  checkout, one dedicated primary commit per completed task, ordinary linked
-  fix commits when later evidence requires them, and one draft pull request
-  opened after the first task commit. Git worktrees require separate explicit
-  user permission. Version 1 always delivers through the pull request and never
-  direct-merges.
+- Each completed task uses one dedicated primary commit; later evidence may
+  require ordinary linked fix commits. A dedicated branch, push, pull request,
+  hosted CI, or Git worktree is used only when required by the user, repository,
+  or approved plan. Passing gates never authorizes an automatic merge.
 - Plan approval authorizes `ntwork` to implement only the current canonical
   specification, plan, and task set. It does not start implementation or
   authorize new scope.
@@ -195,10 +193,10 @@ the public workflow small and milestone-agnostic.
 - [ ] `ntplan` always completes research, criticism, user discussion where required, approval, and at least one executable task without unresolved blockers.
 - [ ] Approved plans contain one or more valid dependency-aware task packets with separate mutable state.
 - [ ] `ntwork all`, `ntwork one`, and `ntwork one <id>` enforce dependencies, validation, review, and completion gates.
-- [ ] After plan-wide validation, a read-only Nyquist auditor blocks final
-  review until the current implementation has adequate, correct, and
-  behaviorally meaningful test coverage or approved reproducible evidence.
-- [ ] Task-level review and final integration/specification review cannot silently PASS with missing evidence.
+- [ ] After plan-wide validation, a read-only Nyquist auditor independently
+  blocks completion until the current implementation has adequate, correct,
+  and behaviorally meaningful test coverage or approved reproducible evidence.
+- [ ] Task-level review, final integration/specification review, and final code review cannot silently PASS with missing evidence.
 - [ ] Corrupt state, missing required native roles, concurrent ownership, and out-of-scope changes stop without repair or fallback.
 - [ ] Fresh sessions restart interrupted phases only after user confirmation; only an interrupted task implementation inside `ntwork` may resume.
 - [ ] Telemetry aggregates by session, task, phase, run, and project without double counting.

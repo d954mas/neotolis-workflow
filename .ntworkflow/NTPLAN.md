@@ -407,41 +407,27 @@ unvalidated artifact set.
 PLAN, and all indexed task packets. It does not repeat planning research,
 criticism, or approval.
 
-Implementation uses one dedicated branch in the current checkout for the
-whole approved plan. Tasks execute sequentially in PLAN's stable order. A
-fresh bounded implementer writes each task; the primary agent retains
-decisions, scope control, canonical verification, review adjudication, status,
-commits, and PR ownership. One read-only task reviewer returns separate
-packet-compliance and code/test-quality verdicts.
+Tasks execute sequentially in PLAN's stable order. Each receives a fresh
+bounded implementer, canonical primary verification, and independent packet
+compliance and code/test quality review. After all tasks, `ntwork` runs PLAN's
+whole-plan validation and independent Nyquist, specification/integration, and
+code reviews on the same revision. The three final reviews may run in parallel;
+required CI remains a separate gate when configured.
 
-Every testable behavior or logic change requires relevant automated tests.
-Formal test-first TDD order and a new test per task are not required; existing
-direct coverage may be reused. Each completed task receives one dedicated
-primary commit. Later evidence may require ordinary linked fix commits; commits
-are not amended or force-pushed.
-
-After the first task commit, `ntwork` opens one draft pull request for the
-whole plan. Required CI may run in the background while later tasks proceed.
-A known required CI failure prevents the following task from starting after
-the current task reaches its boundary; a fresh bounded implementer fixes it
-without parallel writers.
-
-After all tasks, `ntwork` runs PLAN's exact whole-plan validation, a read-only
-Nyquist audit, independent specification/integration review, and code review,
-in that order. In-scope findings are fixed under primary ownership. A
-production-code or test change restarts the complete final sequence; any other
-change invalidates the affected gate and all downstream gates. Required CI
-must PASS on the same current pull-request head.
+In-scope findings use a bounded fix, affected verification and review, then one
+complete final gate on the resulting revision. A dedicated branch, push, pull
+request, hosting integration, and CI are delivery mechanisms only when the
+user, repository, or approved plan requires them; they do not replace quality
+gates.
 
 A finding that changes the approved contract pauses implementation. The user
 may authorize an exceptional SPEC, PLAN, or packet amendment, followed by
 structural validation, fresh independent criticism, and renewed approval.
 There is no standalone `VALIDATION.md`. `ntwork` enters the separate passive
-`delivery-ready` phase only when the pull request is ready and every gate
-passes. Merge observation and completion do not belong to `ntwork`; the
-cross-cutting lifecycle closes `delivery-ready` after the user reports
-delivery or starts a new non-empty task. Git worktrees require separate
-explicit permission.
+`delivery-ready` phase when every applicable gate passes. Merge observation and
+completion do not belong to `ntwork`; the cross-cutting lifecycle closes
+`delivery-ready` after the user reports delivery or starts a new non-empty
+task. `.ntworkflow/NTWORK.md` owns the full execution contract.
 
 ## Expected behavior
 
