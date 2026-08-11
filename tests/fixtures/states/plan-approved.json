@@ -1,0 +1,44 @@
+{
+  "next_work_number": 2,
+  "current": {
+    "run_id": "NT-001",
+    "lifecycle": "plan-approved",
+    "phase": null,
+    "owner": null,
+    "blocker": null,
+    "work": {
+      "tasks": [
+        {
+          "task_id": "NT-001-01",
+          "status": "pending",
+          "start_commit": null,
+          "commit_id": null,
+          "packet_review": "pending",
+          "quality_review": "pending"
+        },
+        {
+          "task_id": "NT-001-02",
+          "status": "pending",
+          "start_commit": null,
+          "commit_id": null,
+          "packet_review": "pending",
+          "quality_review": "pending"
+        }
+      ],
+      "provider": null,
+      "branch": null,
+      "base_branch": null,
+      "pull_request": null,
+      "head_commit": null,
+      "fix_commits": [],
+      "evidence": [],
+      "verdicts": {
+        "whole_plan": "pending",
+        "nyquist": "pending",
+        "spec_integration": "pending",
+        "code_review": "pending",
+        "ci": "pending"
+      }
+    }
+  }
+}

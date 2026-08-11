@@ -1,0 +1,13 @@
+{
+  "next_work_number": 2,
+  "current": {
+    "run_id": "NT-001",
+    "lifecycle": "plan-ready",
+    "phase": "ntplan",
+    "owner": {
+      "session_id": "codex:22222222-2222-2222-2222-222222222222"
+    },
+    "blocker": null,
+    "work": null
+  }
+}

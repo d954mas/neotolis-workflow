@@ -1,0 +1,68 @@
+{
+  "next_work_number": 2,
+  "current": {
+    "run_id": "NT-001",
+    "lifecycle": "work-active",
+    "phase": "ntwork",
+    "owner": {
+      "session_id": "codex:33333333-3333-3333-3333-333333333333"
+    },
+    "blocker": null,
+    "work": {
+      "tasks": [
+        {
+          "task_id": "NT-001-01",
+          "status": "completed",
+          "start_commit": "1111111111111111111111111111111111111111",
+          "commit_id": "2222222222222222222222222222222222222222",
+          "packet_review": "pass",
+          "quality_review": "pass"
+        },
+        {
+          "task_id": "NT-001-02",
+          "status": "active",
+          "start_commit": "2222222222222222222222222222222222222222",
+          "commit_id": null,
+          "packet_review": "block",
+          "quality_review": "pending"
+        },
+        {
+          "task_id": "NT-001-03",
+          "status": "pending",
+          "start_commit": null,
+          "commit_id": null,
+          "packet_review": "pending",
+          "quality_review": "pending"
+        }
+      ],
+      "provider": "codex",
+      "branch": "ntwork/NT-001-strict-state",
+      "base_branch": "main",
+      "pull_request": {
+        "id": "42",
+        "url": "https://example.invalid/pull/42"
+      },
+      "head_commit": "2222222222222222222222222222222222222222",
+      "fix_commits": [],
+      "evidence": [
+        {
+          "gate": "task:NT-001-01",
+          "procedure": "node scripts/run-tests.mjs state",
+          "revision": "2222222222222222222222222222222222222222",
+          "result": "pass",
+          "expected": "all state tests pass",
+          "source_ids": [
+            "test-run-1"
+          ]
+        }
+      ],
+      "verdicts": {
+        "whole_plan": "pending",
+        "nyquist": "pending",
+        "spec_integration": "pending",
+        "code_review": "pending",
+        "ci": "pass"
+      }
+    }
+  }
+}

@@ -1,0 +1,61 @@
+{
+  "next_work_number": 1001,
+  "current": {
+    "run_id": "NT-1000",
+    "lifecycle": "delivery-ready",
+    "phase": "delivery-ready",
+    "owner": null,
+    "blocker": null,
+    "work": {
+      "tasks": [
+        {
+          "task_id": "NT-1000-01",
+          "status": "completed",
+          "start_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "commit_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "packet_review": "pass",
+          "quality_review": "pass"
+        },
+        {
+          "task_id": "NT-1000-100",
+          "status": "completed",
+          "start_commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "commit_id": "cccccccccccccccccccccccccccccccccccccccc",
+          "packet_review": "pass",
+          "quality_review": "pass"
+        }
+      ],
+      "provider": "claude",
+      "branch": "ntwork/NT-1000-release",
+      "base_branch": "main",
+      "pull_request": {
+        "id": "1000",
+        "url": "https://example.invalid/pull/1000"
+      },
+      "head_commit": "dddddddddddddddddddddddddddddddddddddddd",
+      "fix_commits": [
+        "dddddddddddddddddddddddddddddddddddddddd"
+      ],
+      "evidence": [
+        {
+          "gate": "whole-plan",
+          "procedure": "npm test",
+          "revision": "dddddddddddddddddddddddddddddddddddddddd",
+          "result": "pass",
+          "expected": "all tests pass",
+          "source_ids": [
+            "ci-1000",
+            "review-1000"
+          ]
+        }
+      ],
+      "verdicts": {
+        "whole_plan": "pass",
+        "nyquist": "pass",
+        "spec_integration": "pass",
+        "code_review": "pass",
+        "ci": "pass"
+      }
+    }
+  }
+}

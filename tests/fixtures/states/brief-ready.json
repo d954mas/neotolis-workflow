@@ -1,0 +1,11 @@
+{
+  "next_work_number": 2,
+  "current": {
+    "run_id": "NT-001",
+    "lifecycle": "brief-ready",
+    "phase": null,
+    "owner": null,
+    "blocker": null,
+    "work": null
+  }
+}
