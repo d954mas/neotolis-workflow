@@ -12,17 +12,31 @@ import type {
 } from './errors.ts';
 
 type JsonCompatible<T> =
-  [T] extends [JsonValue] ? T
+  T extends JsonValue ? T
     : T extends (...args: never[]) => unknown ? never
       : T extends readonly unknown[] ? { readonly [K in keyof T]: JsonCompatible<T[K]> }
         : T extends object ? { readonly [K in keyof T]: JsonCompatible<T[K]> }
           : never;
 
+const NEXT_SKILLS = Object.freeze([
+  'nttask',
+  'ntgrill',
+  'ntplan',
+  'ntwork',
+] as const);
+
+export type NextSkill = (typeof NEXT_SKILLS)[number] | null;
+
+export interface NextAction {
+  readonly skill: NextSkill;
+  readonly instruction: string;
+}
+
 interface ResponseContext<TState> {
   operation: string;
   projectRoot: string;
   state: TState & JsonCompatible<TState>;
-  nextAction: string;
+  nextAction: NextAction;
   warnings: readonly string[];
 }
 
@@ -31,7 +45,7 @@ export interface SuccessResponse<TState = JsonValue> {
   readonly operation: string;
   readonly project_root: string;
   readonly state: JsonCompatible<TState>;
-  readonly next_action: string;
+  readonly next_action: NextAction;
   readonly warnings: readonly string[];
 }
 
@@ -40,7 +54,7 @@ export interface FailureResponse<TState = JsonValue> {
   readonly operation: string;
   readonly project_root: string;
   readonly state: JsonCompatible<TState>;
-  readonly next_action: string;
+  readonly next_action: NextAction;
   readonly warnings: readonly string[];
   readonly error: {
     readonly code: ErrorCode;
@@ -57,7 +71,7 @@ export type ProtocolResponse<TState = JsonValue> =
 interface ResponseMetadata {
   readonly operation: string;
   readonly projectRoot: string;
-  readonly nextAction: string;
+  readonly nextAction: NextAction;
   readonly warnings: readonly string[];
 }
 
@@ -77,7 +91,10 @@ const EMERGENCY_FAILURE_RESPONSE = freezeFailureResponse<null>({
   operation: 'unknown',
   project_root: '',
   state: null,
-  next_action: 'Inspect the internal failure and retry.',
+  next_action: Object.freeze({
+    skill: null,
+    instruction: 'Inspect the internal failure and retry.',
+  }),
   warnings: Object.freeze([]),
   error: {
     code: ERROR_CODES.INTERNAL_FAILURE,
@@ -95,6 +112,36 @@ function snapshotWarnings(value: unknown): readonly string[] | undefined {
   return snapshot as readonly string[];
 }
 
+function snapshotNextAction(value: unknown): NextAction | undefined {
+  const snapshot = createJsonSnapshot(value);
+  if (
+    snapshot === null
+    || typeof snapshot !== 'object'
+    || Array.isArray(snapshot)
+    || Object.keys(snapshot).length !== 2
+    || !Object.hasOwn(snapshot, 'skill')
+    || !Object.hasOwn(snapshot, 'instruction')
+  ) {
+    return undefined;
+  }
+
+  const record = snapshot as { readonly [key: string]: JsonValue };
+  const skill = record.skill;
+  const instruction = record.instruction;
+  if (
+    (skill !== null && (
+      typeof skill !== 'string'
+      || !NEXT_SKILLS.some((candidate) => candidate === skill)
+    ))
+    || typeof instruction !== 'string'
+    || instruction.length === 0
+  ) {
+    return undefined;
+  }
+
+  return Object.freeze({ skill: skill as NextSkill, instruction });
+}
+
 function snapshotContext<TState>(
   context: ResponseContext<TState>,
 ): ContextSnapshot | undefined {
@@ -104,11 +151,12 @@ function snapshotContext<TState>(
     const state = context.state;
     const nextAction = context.nextAction;
     const warnings = snapshotWarnings(context.warnings);
+    const nextActionSnapshot = snapshotNextAction(nextAction);
 
     if (
       typeof operation !== 'string'
       || typeof projectRoot !== 'string'
-      || typeof nextAction !== 'string'
+      || nextActionSnapshot === undefined
       || warnings === undefined
     ) {
       return undefined;
@@ -118,7 +166,7 @@ function snapshotContext<TState>(
       operation,
       projectRoot,
       state: createJsonSnapshot(state),
-      nextAction,
+      nextAction: nextActionSnapshot,
       warnings,
     });
   } catch {

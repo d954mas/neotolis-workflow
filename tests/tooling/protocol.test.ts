@@ -36,11 +36,15 @@ const namedState: NamedState = {
   current: null,
 };
 const namedResponseState: SuccessResponse<NamedState>['state'] = namedState;
+
+function action(instruction: string) {
+  return { skill: null, instruction } as const;
+}
 const createNamedStateResponse = () => createSuccessResponse({
   operation: 'status',
   projectRoot: '/work/project',
   state: namedState,
-  nextAction: 'None.',
+  nextAction: action('None.'),
   warnings: [],
 });
 
@@ -49,13 +53,13 @@ test('serializes a success response as exactly one JSON line', () => {
     operation: 'status',
     projectRoot: 'C:/work/project',
     state: null,
-    nextAction: 'Run nttask with a non-empty task.',
+    nextAction: action('Run nttask with a non-empty task.'),
     warnings: [],
   });
 
   assert.equal(
     serializeResponse(response),
-    '{"ok":true,"operation":"status","project_root":"C:/work/project","state":null,"next_action":"Run nttask with a non-empty task.","warnings":[]}\n',
+    '{"ok":true,"operation":"status","project_root":"C:/work/project","state":null,"next_action":{"skill":null,"instruction":"Run nttask with a non-empty task."},"warnings":[]}\n',
   );
 });
 
@@ -64,7 +68,7 @@ test('serializes a failure response with stable error details as exactly one JSO
     operation: 'phase begin nttask',
     projectRoot: '/work/project',
     state: { next_work_number: 1, current: null },
-    nextAction: 'Start a run before beginning nttask.',
+    nextAction: action('Start a run before beginning nttask.'),
     warnings: [],
     error: new WorkflowError({
       code: ERROR_CODES.ILLEGAL_TRANSITION,
@@ -75,7 +79,7 @@ test('serializes a failure response with stable error details as exactly one JSO
 
   assert.equal(
     serializeResponse(response),
-    '{"ok":false,"operation":"phase begin nttask","project_root":"/work/project","state":{"next_work_number":1,"current":null},"next_action":"Start a run before beginning nttask.","warnings":[],"error":{"code":"ILLEGAL_TRANSITION","exit_code":11,"message":"Cannot begin nttask without an active run.","details":{"lifecycle":null}}}\n',
+    '{"ok":false,"operation":"phase begin nttask","project_root":"/work/project","state":{"next_work_number":1,"current":null},"next_action":{"skill":null,"instruction":"Start a run before beginning nttask."},"warnings":[],"error":{"code":"ILLEGAL_TRANSITION","exit_code":11,"message":"Cannot begin nttask without an active run.","details":{"lifecycle":null}}}\n',
   );
 });
 
@@ -84,7 +88,7 @@ test('escapes embedded newlines without emitting more than one protocol line', (
     operation: 'status',
     projectRoot: '/work/project',
     state: null,
-    nextAction: 'Correct the input.',
+    nextAction: action('Correct the input.'),
     warnings: [],
     error: new WorkflowError({
       code: ERROR_CODES.INVALID_INPUT,
@@ -120,7 +124,7 @@ test('maps every stable workflow error code into the response and JSON line', ()
       operation: 'test',
       projectRoot: '/work/project',
       state: null,
-      nextAction: 'None.',
+      nextAction: action('None.'),
       warnings: [],
       error: workflowError,
     });
@@ -180,7 +184,7 @@ test('invalid runtime state produces a serializable internal failure', () => {
       operation: 'status',
       projectRoot: '/work/project',
       state: state as never,
-      nextAction: 'Correct the runtime integration.',
+      nextAction: action('Correct the runtime integration.'),
       warnings: [],
     });
 
@@ -194,7 +198,7 @@ test('sanitizes invalid error details without changing the declared exit code', 
     operation: 'status',
     projectRoot: '/work/project',
     state: null,
-    nextAction: 'Correct the input.',
+    nextAction: action('Correct the input.'),
     warnings: [],
     error: new WorkflowError({
       code: ERROR_CODES.INVALID_INPUT,
@@ -219,14 +223,14 @@ test('factories keep deep snapshots of state, warnings, and error details', () =
     operation: 'status',
     projectRoot: '/work/project',
     state,
-    nextAction: 'None.',
+    nextAction: action('None.'),
     warnings,
   });
   const failure = createFailureResponse({
     operation: 'status',
     projectRoot: '/work/project',
     state: null,
-    nextAction: 'Correct the input.',
+    nextAction: action('Correct the input.'),
     warnings: [],
     error: new WorkflowError({
       code: ERROR_CODES.INVALID_INPUT,
@@ -252,14 +256,22 @@ test('factories keep deep snapshots of state, warnings, and error details', () =
 
 test('types reject non-JSON state', () => {
   const compileOnlyAssertions = () => {
+    createSuccessResponse({
+      operation: 'x',
+      projectRoot: 'x',
+      state: null,
+      // @ts-expect-error nextAction has one canonical object contract
+      nextAction: 'x',
+      warnings: [],
+    });
     // @ts-expect-error functions are not JSON state
-    createSuccessResponse({ operation: 'x', projectRoot: 'x', state: () => null, nextAction: 'x', warnings: [] });
+    createSuccessResponse({ operation: 'x', projectRoot: 'x', state: () => null, nextAction: action('x'), warnings: [] });
     // @ts-expect-error Map is not JSON state
-    createSuccessResponse({ operation: 'x', projectRoot: 'x', state: new Map(), nextAction: 'x', warnings: [] });
+    createSuccessResponse({ operation: 'x', projectRoot: 'x', state: new Map(), nextAction: action('x'), warnings: [] });
     // @ts-expect-error Date is not JSON state
-    createSuccessResponse({ operation: 'x', projectRoot: 'x', state: new Date(), nextAction: 'x', warnings: [] });
+    createSuccessResponse({ operation: 'x', projectRoot: 'x', state: new Date(), nextAction: action('x'), warnings: [] });
     // @ts-expect-error custom toJSON is not JSON state
-    createSuccessResponse({ operation: 'x', projectRoot: 'x', state: { toJSON: () => null }, nextAction: 'x', warnings: [] });
+    createSuccessResponse({ operation: 'x', projectRoot: 'x', state: { toJSON: () => null }, nextAction: action('x'), warnings: [] });
   };
 
   assert.equal(typeof compileOnlyAssertions, 'function');
@@ -270,4 +282,32 @@ test('failure types exclude exit code zero and default response states are usabl
   assert.deepEqual(defaultResponseStatesAreUsable, [null, null, null]);
   assert.deepEqual(namedResponseState, namedState);
   assert.equal(typeof createNamedStateResponse, 'function');
+});
+
+test('accepts only the canonical object shape for next_action', () => {
+  const valid = createSuccessResponse({
+    operation: 'status',
+    projectRoot: '/work/project',
+    state: null,
+    nextAction: {
+      skill: 'nttask',
+      instruction: 'Start nttask with a non-empty task.',
+    },
+    warnings: [],
+  });
+  assert.equal(valid.ok, true);
+  assert.deepEqual(valid.next_action, {
+    skill: 'nttask',
+    instruction: 'Start nttask with a non-empty task.',
+  });
+
+  const invalid = createSuccessResponse({
+    operation: 'status',
+    projectRoot: '/work/project',
+    state: null,
+    nextAction: 'Run nttask.' as never,
+    warnings: [],
+  });
+  assert.equal(invalid.ok, false);
+  assert.equal(Object.isFrozen(invalid.next_action), true);
 });

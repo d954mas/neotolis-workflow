@@ -1,13 +1,18 @@
 import { rm } from 'node:fs/promises';
 import { globSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { relative, resolve } from 'node:path';
 import { build } from 'esbuild';
 
-const entryPoints = globSync('src/**/*.ts')
+const sourceRoot = resolve('src');
+const entryPoints = Object.fromEntries(globSync('src/**/*.ts')
   .map((entryPoint) => resolve(entryPoint))
-  .sort();
+  .sort()
+  .map((entryPoint) => {
+    const entryName = relative(sourceRoot, entryPoint).replaceAll('\\', '/').slice(0, -3);
+    return [entryName === 'cli/main' ? 'cli/ntworkflow' : entryName, entryPoint];
+  }));
 
-if (entryPoints.length === 0) {
+if (Object.keys(entryPoints).length === 0) {
   throw new Error('No TypeScript source files found under src/.');
 }
 
@@ -19,7 +24,6 @@ await build({
   entryNames: '[dir]/[name]',
   entryPoints,
   format: 'esm',
-  outbase: resolve('src'),
   outdir: 'build',
   outExtension: { '.js': '.mjs' },
   platform: 'node',
