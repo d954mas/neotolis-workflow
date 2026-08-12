@@ -406,7 +406,7 @@ test('rejected operations do not change existing state', async () => {
   }
 });
 
-test('CLI registers only the three fixed run operations', () => {
+test('CLI keeps run operations while phase commands use their registered handler', () => {
   const cancelProject = temporaryProject('cli-cancel');
   const completeState = fixtureState('delivery-ready.json');
   const completeProject = temporaryProject('cli-complete', completeState);
@@ -465,7 +465,9 @@ test('CLI registers only the three fixed run operations', () => {
       '--session-id',
       'codex:not-yet',
     );
-    assert.equal(phase.status, 2, phase.stderr);
+    assert.equal(phase.status, 11, phase.stderr);
+    assert.equal(JSON.parse(phase.stdout).operation, 'phase begin nttask');
+    assert.equal(readState(cancelProject).current, null);
   } finally {
     rmSync(cancelProject, { force: true, recursive: true });
     rmSync(completeProject, { force: true, recursive: true });

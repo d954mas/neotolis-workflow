@@ -1,6 +1,7 @@
 import { operationForArguments, parseArguments } from './arguments.ts';
 import type {
   CliArguments,
+  PhaseArguments,
   RunArguments,
   StatusArguments,
 } from './arguments.ts';
@@ -12,9 +13,18 @@ import {
 } from '../core/protocol.ts';
 import type { NextAction, NextSkill } from '../core/protocol.ts';
 import type { State } from '../core/state.ts';
+import {
+  beginNttaskPhase,
+  completeNttaskPhase,
+  stopNttaskPhase,
+} from '../runtime/phase.ts';
 import { readPreflight } from '../runtime/preflight.ts';
 import { resolveProjectRoot } from '../runtime/project-root.ts';
 import { cancelRun, completeRun, startRun } from '../runtime/run.ts';
+
+function action(skill: NextSkill, instruction: string): NextAction {
+  return Object.freeze({ skill, instruction });
+}
 
 const INVALID_INPUT_ACTION = action(null, 'Correct the CLI input and retry.');
 const STATUS_FAILURE_ACTION = action(
@@ -29,20 +39,37 @@ const RUN_FAILURE_ACTION = action(
   null,
   'Resolve the reported run failure before retrying.',
 );
-
-function action(skill: NextSkill, instruction: string): NextAction {
-  return Object.freeze({ skill, instruction });
-}
+const PHASE_FAILURE_ACTION = action(
+  'nttask',
+  'Resolve the reported phase failure before retrying nttask.',
+);
+const OWNERSHIP_CONFLICT_ACTION = action(
+  'nttask',
+  'Continue in the recorded owner session, or retry with explicit --interruption authority.',
+);
+const UNRESOLVED_BLOCKER_ACTION = action(
+  'nttask',
+  'Resolve the recorded blocker, then retry phase begin nttask with --blocker-resolved.',
+);
+const COMPLETE_OWNERSHIP_CONFLICT_ACTION = action(
+  'nttask',
+  'Continue in the recorded owner session, or replace it with phase begin nttask --interruption <provider-ended|user-confirmed>.',
+);
+const ACTIVE_PHASE_ACTION = action('nttask', 'Continue the active nttask phase.');
+const DURABLE_INTAKE_ACTION = action(
+  'nttask', 'Begin nttask from the durable intake boundary.',
+);
 
 function nextActionFor(state: State | null): NextAction {
   if (state === null || state.current === null) {
     return action('nttask', 'Start nttask with a non-empty task.');
   }
 
-  const lifecycle = state.current.lifecycle;
-  switch (lifecycle) {
+  switch (state.current.lifecycle) {
     case 'intake-active':
-      return action('nttask', 'Continue the active nttask phase.');
+      if (state.current.blocker !== null) return UNRESOLVED_BLOCKER_ACTION;
+      if (state.current.phase === 'nttask') return ACTIVE_PHASE_ACTION;
+      return DURABLE_INTAKE_ACTION;
     case 'brief-ready':
       return action('ntgrill', 'Continue with ntgrill.');
     case 'plan-ready':
@@ -56,9 +83,6 @@ function nextActionFor(state: State | null): NextAction {
         'Start nttask when ready to close delivery and begin a new run.',
       );
   }
-
-  const exhaustiveLifecycle: never = lifecycle;
-  return exhaustiveLifecycle;
 }
 
 function suppliedCwd(argv: readonly string[]): string | null {
@@ -81,12 +105,10 @@ async function contextForInvalidArguments(argv: readonly string[]): Promise<{
   state: State | null;
 }> {
   const cwd = suppliedCwd(argv);
-  if (cwd === null) {
-    return { projectRoot: '', state: null };
-  }
+  if (cwd === null) return { projectRoot: '', state: null };
+
   try {
-    const result = await readPreflight(cwd);
-    return result;
+    return await readPreflight(cwd);
   } catch {
     return { projectRoot: await resolvedRootOrEmpty(cwd), state: null };
   }
@@ -100,51 +122,95 @@ interface CommandResult {
 
 async function executeStatus(parsed: StatusArguments): Promise<CommandResult> {
   const preflight = await readPreflight(parsed.cwd);
-  return {
-    projectRoot: preflight.projectRoot,
-    state: preflight.state,
-    warnings: [],
-  };
+  return { ...preflight, warnings: [] };
 }
 
 async function executeRun(parsed: RunArguments): Promise<CommandResult> {
   const projectRoot = await resolveProjectRoot(parsed.cwd);
   const input = { sessionId: parsed.sessionId };
-  let result: Awaited<ReturnType<typeof startRun>>;
+  const result = parsed.operation === 'start'
+    ? await startRun(projectRoot, input)
+    : parsed.operation === 'cancel'
+      ? await cancelRun(projectRoot, {
+        ...input,
+        userConfirmed: parsed.userConfirmed,
+      })
+      : await completeRun(projectRoot, {
+        ...input,
+        userConfirmed: parsed.userConfirmed,
+      });
 
-  switch (parsed.operation) {
-    case 'start':
-      result = await startRun(projectRoot, input);
-      break;
-    case 'cancel':
-      result = await cancelRun(projectRoot, {
-        ...input,
-        userConfirmed: parsed.userConfirmed,
-      });
-      break;
-    case 'complete':
-      result = await completeRun(projectRoot, {
-        ...input,
-        userConfirmed: parsed.userConfirmed,
-      });
-      break;
+  return { projectRoot, ...result };
+}
+
+async function executePhase(parsed: PhaseArguments): Promise<CommandResult> {
+  const projectRoot = await resolveProjectRoot(parsed.cwd);
+
+  if (parsed.operation === 'complete') {
+    const result = await completeNttaskPhase(projectRoot, {
+      sessionId: parsed.sessionId,
+    });
+    return { projectRoot, ...result };
   }
 
-  return {
-    projectRoot,
-    state: result.state,
-    warnings: result.warnings,
-  };
+  const interruption = parsed.interruption === undefined
+    ? {}
+    : { interruption: parsed.interruption };
+  if (parsed.operation === 'begin') {
+    const result = await beginNttaskPhase(projectRoot, {
+      sessionId: parsed.sessionId,
+      blockerResolved: parsed.blockerResolved,
+      ...interruption,
+    });
+    return { projectRoot, ...result };
+  }
+
+  const result = await stopNttaskPhase(projectRoot, {
+    sessionId: parsed.sessionId,
+    blocker: parsed.blocker,
+    ...interruption,
+  });
+  return { projectRoot, ...result };
 }
 
 function executeCommand(parsed: CliArguments): Promise<CommandResult> {
-  return parsed.command === 'status'
-    ? executeStatus(parsed)
-    : executeRun(parsed);
+  if (parsed.command === 'status') return executeStatus(parsed);
+  if (parsed.command === 'run') return executeRun(parsed);
+  return executePhase(parsed);
 }
 
 function operationForCommand(parsed: CliArguments): string {
-  return parsed.command === 'status' ? parsed.command : `run ${parsed.operation}`;
+  if (parsed.command === 'status') return 'status';
+  if (parsed.command === 'run') return `run ${parsed.operation}`;
+  return `phase ${parsed.operation} nttask`;
+}
+
+function failureAction(
+  parsed: CliArguments,
+  error: unknown,
+  state: State | null,
+): NextAction {
+  if (parsed.command === 'status') return STATUS_FAILURE_ACTION;
+  if (parsed.command === 'run') {
+    return error instanceof WorkflowError && error.code === ERROR_CODES.ILLEGAL_TRANSITION
+      ? nextActionFor(state)
+      : RUN_FAILURE_ACTION;
+  }
+  if (!(error instanceof WorkflowError)) return PHASE_FAILURE_ACTION;
+
+  switch (error.code) {
+    case ERROR_CODES.INVALID_INPUT:
+      return INVALID_INPUT_ACTION;
+    case ERROR_CODES.ILLEGAL_TRANSITION:
+      return nextActionFor(state);
+    case ERROR_CODES.OWNERSHIP_CONFLICT:
+      return parsed.operation === 'complete'
+        ? COMPLETE_OWNERSHIP_CONFLICT_ACTION : OWNERSHIP_CONFLICT_ACTION;
+    case ERROR_CODES.UNRESOLVED_BLOCKER:
+      return UNRESOLVED_BLOCKER_ACTION;
+    default:
+      return PHASE_FAILURE_ACTION;
+  }
 }
 
 async function execute(argv: readonly string[]): Promise<number> {
@@ -186,16 +252,11 @@ async function execute(argv: readonly string[]): Promise<number> {
     } catch {
       // Preserve the primary failure when current state cannot be read.
     }
-    const isStatus = parsed.command === 'status';
     const response = createFailureResponse({
       operation: operationForCommand(parsed),
       projectRoot,
       state,
-      nextAction: isStatus
-        ? STATUS_FAILURE_ACTION
-        : error instanceof WorkflowError && error.code === ERROR_CODES.ILLEGAL_TRANSITION
-          ? nextActionFor(state)
-          : RUN_FAILURE_ACTION,
+      nextAction: failureAction(parsed, error, state),
       warnings: [],
       error,
     });

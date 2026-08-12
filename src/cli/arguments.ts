@@ -1,4 +1,6 @@
 import { ERROR_CODES, WorkflowError } from '../core/errors.ts';
+import { isInterruptionAuthority } from '../runtime/phase.ts';
+import type { InterruptionAuthority } from '../runtime/phase.ts';
 
 export interface StatusArguments {
   readonly cwd: string;
@@ -13,14 +15,62 @@ export interface RunArguments {
   readonly userConfirmed: boolean;
 }
 
-export type CliArguments = StatusArguments | RunArguments;
+interface PhaseArgumentsBase {
+  readonly cwd: string;
+  readonly command: 'phase';
+  readonly phase: 'nttask';
+  readonly sessionId: string;
+}
 
-function invalidArguments(message: string, details: { readonly [key: string]: string }): never {
+export interface PhaseBeginArguments extends PhaseArgumentsBase {
+  readonly operation: 'begin';
+  readonly interruption?: InterruptionAuthority;
+  readonly blockerResolved: boolean;
+}
+
+export interface PhaseCompleteArguments extends PhaseArgumentsBase {
+  readonly operation: 'complete';
+}
+
+export interface PhaseStopArguments extends PhaseArgumentsBase {
+  readonly operation: 'stop';
+  readonly blocker: string;
+  readonly interruption?: InterruptionAuthority;
+}
+
+export type PhaseArguments =
+  | PhaseBeginArguments
+  | PhaseCompleteArguments
+  | PhaseStopArguments;
+export type CliArguments = StatusArguments | RunArguments | PhaseArguments;
+
+function invalidArguments(
+  message: string,
+  details: { readonly [key: string]: string },
+): never {
   throw new WorkflowError({
     code: ERROR_CODES.INVALID_INPUT,
     message,
     details,
   });
+}
+
+function requireSessionId(argv: readonly string[]): string {
+  if (argv[5] !== '--session-id' || argv[6] === undefined || argv[6].length === 0) {
+    invalidArguments('Expected --session-id <provider:id>.', {
+      argument: argv[5] ?? '',
+    });
+  }
+  return argv[6];
+}
+
+function parseInterruption(value: string | undefined): InterruptionAuthority {
+  if (!isInterruptionAuthority(value)) {
+    invalidArguments('Invalid --interruption authority.', {
+      value: value ?? '',
+    });
+  }
+  return value;
 }
 
 function parseRunArguments(cwd: string, argv: readonly string[]): RunArguments {
@@ -56,6 +106,101 @@ function parseRunArguments(cwd: string, argv: readonly string[]): RunArguments {
   });
 }
 
+function phaseBase(cwd: string, sessionId: string): PhaseArgumentsBase {
+  return { cwd, command: 'phase', phase: 'nttask', sessionId };
+}
+
+function parsePhaseBegin(
+  cwd: string,
+  sessionId: string,
+  options: readonly string[],
+): PhaseBeginArguments {
+  if (options.length === 0) {
+    return Object.freeze({
+      ...phaseBase(cwd, sessionId),
+      operation: 'begin',
+      blockerResolved: false,
+    });
+  }
+  if (options.length === 1 && options[0] === '--blocker-resolved') {
+    return Object.freeze({
+      ...phaseBase(cwd, sessionId),
+      operation: 'begin',
+      blockerResolved: true,
+    });
+  }
+  if (
+    (options.length === 2 || options.length === 3)
+    && options[0] === '--interruption'
+    && (options.length === 2 || options[2] === '--blocker-resolved')
+  ) {
+    return Object.freeze({
+      ...phaseBase(cwd, sessionId),
+      operation: 'begin',
+      interruption: parseInterruption(options[1]),
+      blockerResolved: options.length === 3,
+    });
+  }
+  invalidArguments('Unexpected phase begin argument.', {
+    argument: options[0] ?? '',
+  });
+}
+
+function parsePhaseStop(
+  cwd: string,
+  sessionId: string,
+  options: readonly string[],
+): PhaseStopArguments {
+  const blocker = options[1];
+  if (options[0] !== '--blocker' || blocker === undefined || blocker.trim().length === 0) {
+    invalidArguments('Expected --blocker <non-empty-text>.', {
+      argument: options[0] ?? '',
+    });
+  }
+  if (options.length === 2) {
+    return Object.freeze({
+      ...phaseBase(cwd, sessionId),
+      operation: 'stop',
+      blocker,
+    });
+  }
+  if (options.length === 4 && options[2] === '--interruption') {
+    return Object.freeze({
+      ...phaseBase(cwd, sessionId),
+      operation: 'stop',
+      blocker,
+      interruption: parseInterruption(options[3]),
+    });
+  }
+  invalidArguments('Unexpected phase stop argument.', {
+    argument: options[2] ?? '',
+  });
+}
+
+function parsePhaseArguments(cwd: string, argv: readonly string[]): PhaseArguments {
+  const operation = argv[3];
+  if (operation !== 'begin' && operation !== 'complete' && operation !== 'stop') {
+    invalidArguments('Unknown phase operation.', { operation: operation ?? '' });
+  }
+  if (argv[4] !== 'nttask') {
+    invalidArguments('Unknown phase.', { phase: argv[4] ?? '' });
+  }
+
+  const sessionId = requireSessionId(argv);
+  const options = argv.slice(7);
+  if (operation === 'begin') return parsePhaseBegin(cwd, sessionId, options);
+  if (operation === 'stop') return parsePhaseStop(cwd, sessionId, options);
+  if (options.length !== 0) {
+    invalidArguments('The phase complete command accepts no extra arguments.', {
+      argument: options[0] ?? '',
+    });
+  }
+  return Object.freeze({
+    ...phaseBase(cwd, sessionId),
+    operation: 'complete',
+  });
+}
+
 export function operationForArguments(argv: readonly string[]): string {
   if (argv[0] !== '--cwd' || argv[1] === undefined || argv[1].length === 0) {
     return 'unknown';
@@ -65,6 +210,13 @@ export function operationForArguments(argv: readonly string[]): string {
     && (argv[3] === 'start' || argv[3] === 'cancel' || argv[3] === 'complete')
   ) {
     return `run ${argv[3]}`;
+  }
+  if (
+    argv[2] === 'phase'
+    && (argv[3] === 'begin' || argv[3] === 'complete' || argv[3] === 'stop')
+    && argv[4] === 'nttask'
+  ) {
+    return `phase ${argv[3]} nttask`;
   }
   return argv[2] ?? 'unknown';
 }
@@ -86,6 +238,7 @@ export function parseArguments(argv: readonly string[]): CliArguments {
     return Object.freeze({ cwd: argv[1], command });
   }
   if (command === 'run') return parseRunArguments(argv[1], argv);
+  if (command === 'phase') return parsePhaseArguments(argv[1], argv);
 
   invalidArguments('Unknown command.', { command: command ?? '' });
 }
