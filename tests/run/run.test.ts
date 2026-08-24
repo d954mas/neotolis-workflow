@@ -26,6 +26,7 @@ const SESSION_ID = 'codex:run-tests';
 
 function temporaryProject(name: string, state?: State): string {
   const project = mkdtempSync(join(tmpdir(), `ntworkflow-run-${name}-`));
+  mkdirSync(join(project, '.git'));
   if (state !== undefined) {
     mkdirSync(join(project, '.ntworkflow'));
     writeFileSync(
@@ -94,6 +95,22 @@ function runCli(cwd: string, ...command: string[]) {
   );
 }
 
+test('run start rejects a project outside Git without mutation', async () => {
+  const project = mkdtempSync(join(tmpdir(), 'ntworkflow-run-no-git-'));
+  try {
+    const before = snapshotTree(project);
+    const error = await expectWorkflowError(
+      startRun(project, { sessionId: SESSION_ID }),
+      ERROR_CODES.INVALID_INPUT,
+      2,
+    );
+
+    assert.deepEqual(error.details, { project_root: project });
+    assert.deepEqual(snapshotTree(project), before);
+  } finally {
+    rmSync(project, { force: true, recursive: true });
+  }
+});
 test('first-run-is-NT-001', async () => {
   const project = temporaryProject('first');
   try {

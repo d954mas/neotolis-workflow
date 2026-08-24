@@ -8,7 +8,6 @@ import { ERROR_CODES } from '../../src/core/errors.ts';
 import type { WorkflowError } from '../../src/core/errors.ts';
 import {
   beginNttaskPhase,
-  assertNttaskCompletionAuthority,
   completeNttaskPhase,
   stopNttaskPhase,
 } from '../../src/runtime/phase.ts';
@@ -174,7 +173,7 @@ test('ordinary stop requires exact owner and a non-empty blocker', async () => {
   }
 });
 
-test('complete authority requires exact owner and an active blocker-free phase', async () => {
+test('complete requires exact owner and an active phase', async () => {
   const active = temporaryProject('complete', intakeState({ owner: FIRST_OWNER }));
   const blocked = temporaryProject(
     'complete-blocked',
@@ -187,24 +186,11 @@ test('complete authority requires exact owner and an active blocker-free phase',
       ERROR_CODES.OWNERSHIP_CONFLICT,
       12,
     );
-    assert.doesNotThrow(() => assertNttaskCompletionAuthority(
-      intakeState({ owner: FIRST_OWNER }),
-      { sessionId: FIRST_OWNER },
-    ));
-    assert.throws(
-      () => assertNttaskCompletionAuthority(
-        intakeState({ owner: FIRST_OWNER }), { sessionId: 'native-only' },
-      ),
-      (error: unknown) => {
-        assert.equal((error as WorkflowError).code, ERROR_CODES.INVALID_INPUT);
-        return true;
-      },
-    );
     await expectRejectedWithoutMutation(
       active,
       () => completeNttaskPhase(active, { sessionId: FIRST_OWNER }),
-      ERROR_CODES.ILLEGAL_TRANSITION,
-      11,
+      ERROR_CODES.ARTIFACT_FAILURE,
+      14,
     );
 
     await expectRejectedWithoutMutation(
@@ -288,11 +274,10 @@ test('begin requires intake-active and mutators require an initialized workflow'
         blocker: 'Blocked.',
       }),
     ] as const) {
-      try {
-        await operation();
-      } catch (error) {
+      await assert.rejects(operation(), (error: unknown) => {
         assert.equal((error as WorkflowError).code, ERROR_CODES.COMMIT_FAILURE);
-      }
+        return true;
+      });
     }
   } finally {
     rmSync(later, { force: true, recursive: true });

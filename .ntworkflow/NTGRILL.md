@@ -1,7 +1,6 @@
 # `ntgrill` Phase Contract
 
 **Status:** Confirmed on 2026-08-09
-**Implementation:** Not started
 **Input:** `.ntworkflow/runs/<run-id>/BRIEF.md` in `brief-ready`
 **Output:** Rewritten `.ntworkflow/runs/<run-id>/BRIEF.md`
 **Completed state:** `plan-ready`

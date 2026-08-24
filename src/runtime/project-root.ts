@@ -2,7 +2,7 @@ import { constants } from 'node:fs';
 import { access, lstat, readFile, realpath, stat } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 
-import { ERROR_CODES, WorkflowError } from '../core/errors.ts';
+import { ERROR_CODES, WorkflowError, hasErrorCode } from '../core/errors.ts';
 
 function invalidCwd(cwd: string): WorkflowError {
   return new WorkflowError({
@@ -27,7 +27,7 @@ export async function canonicalizeCwd(cwd: string): Promise<string> {
   }
 }
 
-async function hasGitMarker(directory: string): Promise<boolean> {
+export async function isGitProjectRoot(directory: string): Promise<boolean> {
   const markerPath = join(directory, '.git');
   try {
     const marker = await lstat(markerPath);
@@ -45,14 +45,7 @@ async function hasGitMarker(directory: string): Promise<boolean> {
       });
     }
   } catch (error) {
-    if (
-      error !== null
-      && typeof error === 'object'
-      && 'code' in error
-      && error.code === 'ENOENT'
-    ) {
-      return false;
-    }
+    if (hasErrorCode(error, 'ENOENT')) return false;
     if (error instanceof WorkflowError) throw error;
     throw new WorkflowError({
       code: ERROR_CODES.ARTIFACT_FAILURE,
@@ -67,7 +60,7 @@ export async function resolveProjectRoot(cwd: string): Promise<string> {
   let candidate = canonicalCwd;
 
   while (true) {
-    if (await hasGitMarker(candidate)) return candidate;
+    if (await isGitProjectRoot(candidate)) return candidate;
     const parent = dirname(candidate);
     if (parent === candidate) return canonicalCwd;
     candidate = parent;

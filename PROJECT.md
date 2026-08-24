@@ -2,7 +2,8 @@
 
 ## Status
 
-Contract design confirmed. Implementation planning is next; implementation has not started.
+Contract design is confirmed. Tracer-bullet implementation is complete through
+TB-07; TB-08 is next. The full six-skill workflow is not yet implemented.
 
 ## Goal
 

@@ -1,7 +1,6 @@
 # `ntwork` Phase Contract
 
 **Status:** Confirmed on 2026-08-09
-**Implementation:** Not started
 **Inputs:** Approved `.ntworkflow/runs/<run-id>/SPEC.md`,
 `.ntworkflow/runs/<run-id>/PLAN.md`, and
 `.ntworkflow/runs/<run-id>/tasks/<id>.md`

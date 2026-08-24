@@ -1,9 +1,11 @@
 import { lstat, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { ERROR_CODES, WorkflowError } from '../core/errors.ts';
+import { SESSION_ID_FORMAT } from '../core/domain.ts';
+import { ERROR_CODES, WorkflowError, hasErrorCode } from '../core/errors.ts';
 import { providerForSessionId } from '../core/invariants.ts';
 import type { Lifecycle, State } from '../core/state.ts';
+import { isGitProjectRoot } from './project-root.ts';
 import { runStateTransaction } from './transaction.ts';
 import type {
   StateTransactionResult,
@@ -31,13 +33,6 @@ export interface RunTransactionOptions {
   readonly faultInjector?: TransactionFaultInjector;
 }
 
-function hasErrorCode(error: unknown, code: string): boolean {
-  return error !== null
-    && typeof error === 'object'
-    && 'code' in error
-    && error.code === code;
-}
-
 function validateSessionId(sessionId: string): void {
   if (providerForSessionId(sessionId) === null) {
     throw new WorkflowError({
@@ -45,7 +40,7 @@ function validateSessionId(sessionId: string): void {
       message: 'A canonical provider session ID is required.',
       details: {
         argument: '--session-id',
-        expected: 'claude:<native-id> or codex:<native-id>',
+        expected: SESSION_ID_FORMAT,
       },
     });
   }
@@ -100,6 +95,16 @@ async function ensureDirectory(path: string, stage: string): Promise<void> {
   throw commitFailure(stage, path);
 }
 
+async function requireGitProject(projectRoot: string): Promise<void> {
+  if (await isGitProjectRoot(projectRoot)) return;
+
+  throw new WorkflowError({
+    code: ERROR_CODES.INVALID_INPUT,
+    message: 'Run start requires a Git repository.',
+    details: { project_root: projectRoot },
+  });
+}
+
 async function ensureWorkflowDirectory(projectRoot: string): Promise<void> {
   await ensureDirectory(join(projectRoot, '.ntworkflow'), 'workflow-directory');
 }
@@ -144,6 +149,7 @@ export async function startRun(
   transactionOptions: RunTransactionOptions = {},
 ): Promise<StateTransactionResult> {
   validateSessionId(input.sessionId);
+  await requireGitProject(projectRoot);
   await ensureWorkflowDirectory(projectRoot);
 
   return runStateTransaction(

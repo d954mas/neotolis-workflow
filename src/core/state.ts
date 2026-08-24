@@ -1,22 +1,27 @@
+import {
+  FINAL_REVIEW_KEYS,
+  LIFECYCLES,
+  PHASES,
+  PROVIDERS,
+} from './domain.ts';
+import type { FinalReviewKey, PHASE_SKILLS } from './domain.ts';
 import { validateStateInvariants, workflowStateError } from './invariants.ts';
 
-export type Provider = 'claude' | 'codex';
-export type Lifecycle =
-  | 'intake-active'
-  | 'brief-ready'
-  | 'plan-ready'
-  | 'plan-approved'
-  | 'work-active'
-  | 'delivery-ready';
-export type Phase =
-  | 'nttask'
-  | 'ntgrill'
-  | 'ntplan'
-  | 'ntwork'
-  | 'delivery-ready';
+export {
+  FINAL_REVIEW_KEYS,
+  LIFECYCLES,
+  PHASES,
+  PHASE_SKILLS,
+  PROVIDERS,
+} from './domain.ts';
+export type Provider = (typeof PROVIDERS)[number];
+export type Lifecycle = (typeof LIFECYCLES)[number];
+export type PhaseSkill = (typeof PHASE_SKILLS)[number];
+export type Phase = (typeof PHASES)[number];
 export type TaskStatus = 'pending' | 'active' | 'completed';
 export type ReviewVerdict = 'pending' | 'pass' | 'block';
 export type ValidationVerdict = 'pending' | 'pass' | 'fail';
+export type CiVerdict = ValidationVerdict | 'not-required';
 
 export interface Owner {
   session_id: string;
@@ -36,13 +41,10 @@ export interface Evidence {
   source_ids: string[];
 }
 
-export interface Verdicts {
+export type Verdicts = {
   whole_plan: ValidationVerdict;
-  nyquist: ReviewVerdict;
-  spec_integration: ReviewVerdict;
-  code_review: ReviewVerdict;
-  ci: ValidationVerdict;
-}
+  ci: CiVerdict;
+} & Record<FinalReviewKey, ReviewVerdict>;
 
 export interface Task {
   task_id: string;
@@ -82,11 +84,10 @@ export interface State {
 type RecordValue = Record<string, unknown>;
 
 function field(record: RecordValue, key: string): unknown {
-  const descriptor = Object.getOwnPropertyDescriptor(record, key);
-  if (descriptor === undefined || !('value' in descriptor)) {
+  if (!Object.hasOwn(record, key)) {
     workflowStateError(`$.${key}`, 'required');
   }
-  return descriptor.value;
+  return record[key];
 }
 
 function childPath(path: string, key: string): string {
@@ -98,32 +99,18 @@ function assertExactObject(
   path: string,
   expectedFields: readonly string[],
 ): asserts value is RecordValue {
-  if (
-    value === null
-    || typeof value !== 'object'
-    || Array.isArray(value)
-    || (Object.getPrototypeOf(value) !== Object.prototype
-      && Object.getPrototypeOf(value) !== null)
-  ) {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
     workflowStateError(path, 'object');
   }
 
-  const keys = Reflect.ownKeys(value);
   for (const expectedField of expectedFields) {
     if (!Object.hasOwn(value, expectedField)) {
       workflowStateError(childPath(path, expectedField), 'required');
     }
   }
-  for (const key of keys) {
-    if (typeof key !== 'string' || !expectedFields.includes(key)) {
-      workflowStateError(
-        typeof key === 'string' ? childPath(path, key) : path,
-        'unknown field',
-      );
-    }
-    const descriptor = Object.getOwnPropertyDescriptor(value, key);
-    if (descriptor === undefined || !descriptor.enumerable || !('value' in descriptor)) {
-      workflowStateError(childPath(path, key), 'enumerable data field');
+  for (const key of Object.keys(value)) {
+    if (!expectedFields.includes(key)) {
+      workflowStateError(childPath(path, key), 'unknown field');
     }
   }
 }
@@ -131,16 +118,6 @@ function assertExactObject(
 function assertArray(value: unknown, path: string): asserts value is unknown[] {
   if (!Array.isArray(value)) {
     workflowStateError(path, 'array');
-  }
-  const keys = Reflect.ownKeys(value);
-  if (keys.length !== value.length + 1) {
-    workflowStateError(path, 'dense array without extra fields');
-  }
-  for (let index = 0; index < value.length; index += 1) {
-    const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
-    if (descriptor === undefined || !descriptor.enumerable || !('value' in descriptor)) {
-      workflowStateError(`${path}[${index}]`, 'array element');
-    }
   }
 }
 
@@ -205,18 +182,12 @@ function parseEvidence(value: unknown, path: string): Evidence {
 }
 
 function parseVerdicts(value: unknown, path: string): Verdicts {
-  assertExactObject(value, path, [
-    'whole_plan',
-    'nyquist',
-    'spec_integration',
-    'code_review',
-    'ci',
-  ]);
+  assertExactObject(value, path, ['whole_plan', ...FINAL_REVIEW_KEYS, 'ci']);
   assertEnum(field(value, 'whole_plan'), `${path}.whole_plan`, ['pending', 'pass', 'fail']);
-  assertEnum(field(value, 'nyquist'), `${path}.nyquist`, ['pending', 'pass', 'block']);
-  assertEnum(field(value, 'spec_integration'), `${path}.spec_integration`, ['pending', 'pass', 'block']);
-  assertEnum(field(value, 'code_review'), `${path}.code_review`, ['pending', 'pass', 'block']);
-  assertEnum(field(value, 'ci'), `${path}.ci`, ['pending', 'pass', 'fail']);
+  for (const key of FINAL_REVIEW_KEYS) {
+    assertEnum(field(value, key), `${path}.${key}`, ['pending', 'pass', 'block']);
+  }
+  assertEnum(field(value, 'ci'), `${path}.ci`, ['pending', 'pass', 'fail', 'not-required']);
   return value as unknown as Verdicts;
 }
 
@@ -259,7 +230,7 @@ function parseWork(value: unknown, path: string): Work {
 
   const provider = field(value, 'provider');
   if (provider !== null) {
-    assertEnum(provider, `${path}.provider`, ['claude', 'codex']);
+    assertEnum(provider, `${path}.provider`, PROVIDERS);
   }
   assertNullableString(field(value, 'branch'), `${path}.branch`);
   assertNullableString(field(value, 'base_branch'), `${path}.base_branch`);
@@ -287,23 +258,10 @@ function parseCurrent(value: unknown, path: string): Current {
     'work',
   ]);
   assertString(field(value, 'run_id'), `${path}.run_id`);
-  assertEnum(field(value, 'lifecycle'), `${path}.lifecycle`, [
-    'intake-active',
-    'brief-ready',
-    'plan-ready',
-    'plan-approved',
-    'work-active',
-    'delivery-ready',
-  ]);
+  assertEnum(field(value, 'lifecycle'), `${path}.lifecycle`, LIFECYCLES);
   const phase = field(value, 'phase');
   if (phase !== null) {
-    assertEnum(phase, `${path}.phase`, [
-      'nttask',
-      'ntgrill',
-      'ntplan',
-      'ntwork',
-      'delivery-ready',
-    ]);
+    assertEnum(phase, `${path}.phase`, PHASES);
   }
   const owner = field(value, 'owner');
   if (owner !== null) parseOwner(owner, `${path}.owner`);

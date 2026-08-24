@@ -3,12 +3,13 @@ import {
   lstat,
   open,
   rename,
+  link,
   unlink,
 } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { ERROR_CODES, WorkflowError } from '../core/errors.ts';
+import { ERROR_CODES, WorkflowError, hasErrorCode } from '../core/errors.ts';
 import { parseState } from '../core/state.ts';
 import type { State } from '../core/state.ts';
 import { readProjectState } from './preflight.ts';
@@ -28,12 +29,7 @@ export type TransactionFaultPoint = (typeof TRANSACTION_FAULT_POINTS)[number];
 export type TransactionFaultInjector = (
   point: TransactionFaultPoint,
 ) => void | Promise<void>;
-type DeepReadonly<T> = T extends readonly (infer Entry)[]
-  ? readonly DeepReadonly<Entry>[]
-  : T extends object
-    ? { readonly [Key in keyof T]: DeepReadonly<T[Key]> }
-    : T;
-export type TransactionState = DeepReadonly<State>;
+export type TransactionState = State;
 export type StateTransition = (state: TransactionState | null) => State;
 export type StateCommitPreparation = (
   currentState: TransactionState | null,
@@ -53,13 +49,7 @@ export interface StateTransactionResult {
 interface LockOwnership {
   readonly path: string;
   readonly token: string;
-}
-
-function hasErrorCode(error: unknown, code: string): boolean {
-  return error !== null
-    && typeof error === 'object'
-    && 'code' in error
-    && error.code === code;
+  readonly releasePath: string;
 }
 
 function commitFailure(stage: string, path: string): WorkflowError {
@@ -68,25 +58,6 @@ function commitFailure(stage: string, path: string): WorkflowError {
     message: 'Workflow state could not be committed.',
     details: { stage, path },
   });
-}
-
-function freezeState(state: State): TransactionState;
-function freezeState(state: null): null;
-function freezeState(state: State | null): TransactionState | null;
-function freezeState(state: State | null): TransactionState | null {
-  if (state === null) return null;
-
-  const freeze = (value: object): void => {
-    for (const child of Object.values(value) as unknown[]) {
-      if (child !== null && typeof child === 'object' && !Object.isFrozen(child)) {
-        freeze(child);
-      }
-    }
-    Object.freeze(value);
-  };
-
-  freeze(state);
-  return state;
 }
 
 function serializeState(state: State): string {
@@ -106,7 +77,22 @@ async function releaseOwnedLock(lock: LockOwnership): Promise<boolean> {
   let handle: FileHandle | null = null;
 
   try {
-    handle = await open(lock.path, 'r');
+    await rename(lock.path, lock.releasePath);
+  } catch {
+    return false;
+  }
+
+  const restoreClaimedLock = async (): Promise<void> => {
+    try {
+      await link(lock.releasePath, lock.path);
+      await unlink(lock.releasePath);
+    } catch {
+      // Preserve the claimed file when the canonical path cannot be restored safely.
+    }
+  };
+
+  try {
+    handle = await open(lock.releasePath, 'r');
     const value = JSON.parse(await handle.readFile('utf8')) as unknown;
     await handle.close();
     handle = null;
@@ -116,12 +102,16 @@ async function releaseOwnedLock(lock: LockOwnership): Promise<boolean> {
       || typeof value !== 'object'
       || Array.isArray(value)
       || (value as { readonly token?: unknown }).token !== lock.token
-    ) return false;
+    ) {
+      await restoreClaimedLock();
+      return false;
+    }
 
-    await unlink(lock.path);
+    await unlink(lock.releasePath);
     return true;
   } catch {
     await closeQuietly(handle);
+    await restoreClaimedLock();
     return false;
   }
 }
@@ -140,7 +130,11 @@ async function assertWorkflowDirectory(workflowPath: string): Promise<void> {
 async function acquireLock(workflowPath: string): Promise<LockOwnership> {
   const lockPath = join(workflowPath, '.state.lock');
   const token = randomUUID();
-  const lock = { path: lockPath, token };
+  const lock = {
+    path: lockPath,
+    releasePath: join(workflowPath, `.state.lock.${token}.release`),
+    token,
+  };
   let handle: FileHandle;
 
   try {
@@ -246,12 +240,10 @@ export async function runStateTransaction(
   const warnings: string[] = [];
 
   try {
-    const currentState = freezeState(await readProjectState(projectRoot));
-    const candidate = parseState(transition(currentState));
-    const nextState = structuredClone(candidate);
+    const currentState = await readProjectState(projectRoot);
+    const nextState = parseState(transition(currentState));
     const serializedState = serializeState(nextState);
-    const preparedState = freezeState(nextState);
-    await options.prepareCommit?.(currentState, preparedState);
+    await options.prepareCommit?.(currentState, nextState);
     const durabilityWarning = await commitState(
       workflowPath,
       serializedState,
@@ -259,7 +251,7 @@ export async function runStateTransaction(
       options.faultInjector,
     );
     if (durabilityWarning !== null) warnings.push(durabilityWarning);
-    state = structuredClone(nextState);
+    state = nextState;
   } catch (error) {
     await releaseOwnedLock(lock);
     throw error;

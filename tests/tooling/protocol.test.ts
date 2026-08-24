@@ -182,48 +182,8 @@ test('preserves declared workflow errors without exposing their stack traces', (
   assert.equal('stack' in normalized, false);
 });
 
-test('invalid runtime state produces a serializable internal failure', () => {
-  const cyclicState: { self?: unknown } = {};
-  cyclicState.self = cyclicState;
-  const invalidStates = [undefined, 1n, Number.NaN, cyclicState];
 
-  for (const state of invalidStates) {
-    const response = createSuccessResponse({
-      operation: 'status',
-      projectRoot: '/work/project',
-      state: state as never,
-      nextAction: action('Correct the runtime integration.'),
-      warnings: [],
-    });
-
-    assert.equal(response.ok, false);
-    assert.equal(JSON.parse(serializeResponse(response)).error.exit_code, EXIT_CODES.INTERNAL_FAILURE);
-  }
-});
-
-test('sanitizes invalid error details without changing the declared exit code', () => {
-  const response = createFailureResponse({
-    operation: 'status',
-    projectRoot: '/work/project',
-    state: null,
-    nextAction: action('Correct the input.'),
-    warnings: [],
-    error: new WorkflowError({
-      code: ERROR_CODES.INVALID_INPUT,
-      message: 'Invalid input.',
-      details: { value: Number.NaN },
-    }),
-  });
-
-  assert.deepEqual(response.error, {
-    code: ERROR_CODES.INVALID_INPUT,
-    exit_code: EXIT_CODES.INVALID_INPUT,
-    message: 'Invalid input.',
-    details: null,
-  });
-});
-
-test('factories keep deep snapshots of state, warnings, and error details', () => {
+test('factories use their typed state, warnings, and error details directly', () => {
   const state = { nested: { values: [1] } };
   const warnings = ['initial'];
   const details = { nested: { value: 1 } };
@@ -247,42 +207,9 @@ test('factories keep deep snapshots of state, warnings, and error details', () =
     }),
   });
 
-  state.nested.values.push(2);
-  warnings.push('late mutation');
-  details.nested.value = 2;
-
-  const serializedSuccess = JSON.parse(serializeResponse(success)) as {
-    state: unknown;
-    warnings: unknown;
-  };
-  assert.deepEqual(serializedSuccess.state, {
-    nested: { values: [1] },
-  });
-  assert.deepEqual(serializedSuccess.warnings, ['initial']);
-  assert.deepEqual(failure.error.details, { nested: { value: 1 } });
-});
-
-test('types reject non-JSON state', () => {
-  const compileOnlyAssertions = () => {
-    createSuccessResponse({
-      operation: 'x',
-      projectRoot: 'x',
-      state: null,
-      // @ts-expect-error nextAction has one canonical object contract
-      nextAction: 'x',
-      warnings: [],
-    });
-    // @ts-expect-error functions are not JSON state
-    createSuccessResponse({ operation: 'x', projectRoot: 'x', state: () => null, nextAction: action('x'), warnings: [] });
-    // @ts-expect-error Map is not JSON state
-    createSuccessResponse({ operation: 'x', projectRoot: 'x', state: new Map(), nextAction: action('x'), warnings: [] });
-    // @ts-expect-error Date is not JSON state
-    createSuccessResponse({ operation: 'x', projectRoot: 'x', state: new Date(), nextAction: action('x'), warnings: [] });
-    // @ts-expect-error custom toJSON is not JSON state
-    createSuccessResponse({ operation: 'x', projectRoot: 'x', state: { toJSON: () => null }, nextAction: action('x'), warnings: [] });
-  };
-
-  assert.equal(typeof compileOnlyAssertions, 'function');
+  assert.equal(success.state, state);
+  assert.equal(success.warnings, warnings);
+  assert.equal(failure.error.details, details);
 });
 
 test('failure types exclude exit code zero and default response states are usable', () => {
@@ -292,7 +219,7 @@ test('failure types exclude exit code zero and default response states are usabl
   assert.equal(typeof createNamedStateResponse, 'function');
 });
 
-test('accepts only the canonical object shape for next_action', () => {
+test('preserves the typed next_action object', () => {
   const valid = createSuccessResponse({
     operation: 'status',
     projectRoot: '/work/project',
@@ -309,13 +236,4 @@ test('accepts only the canonical object shape for next_action', () => {
     instruction: 'Start nttask with a non-empty task.',
   });
 
-  const invalid = createSuccessResponse({
-    operation: 'status',
-    projectRoot: '/work/project',
-    state: null,
-    nextAction: 'Run nttask.' as never,
-    warnings: [],
-  });
-  assert.equal(invalid.ok, false);
-  assert.equal(Object.isFrozen(invalid.next_action), true);
 });

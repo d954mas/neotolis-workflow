@@ -1,7 +1,7 @@
 import { lstat, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { ERROR_CODES, WorkflowError } from '../core/errors.ts';
+import { ERROR_CODES, WorkflowError, hasErrorCode } from '../core/errors.ts';
 import { parseState } from '../core/state.ts';
 import type { State } from '../core/state.ts';
 import { resolveProjectRoot } from './project-root.ts';
@@ -11,12 +11,6 @@ export interface PreflightResult {
   readonly state: State | null;
 }
 
-function hasErrorCode(error: unknown, code: string): boolean {
-  return error !== null
-    && typeof error === 'object'
-    && 'code' in error
-    && error.code === code;
-}
 
 function invalidState(rule: string): WorkflowError {
   return new WorkflowError({

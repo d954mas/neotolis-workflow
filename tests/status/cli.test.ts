@@ -92,6 +92,7 @@ test('malformed CLI input reports only a recognized operation token', () => {
 test('status reports an uninitialized project and the nttask next skill without mutation', () => {
   const project = mkdtempSync(join(tmpdir(), 'ntworkflow-cli-empty-'));
   try {
+    mkdirSync(join(project, '.git'));
     writeFileSync(join(project, 'consumer.txt'), 'unchanged\n');
     const before = snapshotTree(project);
 
@@ -187,6 +188,7 @@ test('status maps every readable lifecycle to the correct next skill', () => {
   for (const [fixture, expectedSkill] of cases) {
     const project = mkdtempSync(join(tmpdir(), 'ntworkflow-cli-lifecycle-'));
     try {
+      mkdirSync(join(project, '.git'));
       mkdirSync(join(project, '.ntworkflow'));
       writeFileSync(
         join(project, '.ntworkflow', 'state.json'),
@@ -209,6 +211,29 @@ test('status maps every readable lifecycle to the correct next skill', () => {
   }
 });
 
+test('delivery-ready status names both legal ways to close the passive phase', () => {
+  const project = mkdtempSync(join(tmpdir(), 'ntworkflow-cli-delivery-ready-'));
+  try {
+    mkdirSync(join(project, '.ntworkflow'));
+    writeFileSync(
+      join(project, '.ntworkflow', 'state.json'),
+      readFileSync(join('tests', 'fixtures', 'states', 'delivery-ready.json')),
+    );
+
+    const result = runCli(project, 'status');
+    const response = JSON.parse(result.stdout) as {
+      next_action: { skill: string; instruction: string };
+    };
+
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(response.next_action.skill, 'nttask');
+    assert.match(response.next_action.instruction, /run complete/u);
+    assert.match(response.next_action.instruction, /nttask/u);
+  } finally {
+    rmSync(project, { force: true, recursive: true });
+  }
+});
+
 test('the committed empty consumer fixture stays unchanged when copied outside Git', () => {
   const fixture = join('tests', 'fixtures', 'consumer-repos', 'empty');
   const fixtureBefore = snapshotTree(fixture);
@@ -224,14 +249,15 @@ test('the committed empty consumer fixture stays unchanged when copied outside G
       ok: boolean;
       project_root: string;
       state: unknown;
-      next_action: { skill: string };
+      next_action: { skill: string | null; instruction: string };
     };
 
     assert.equal(result.status, 0, result.stderr);
     assert.equal(response.ok, true);
     assert.equal(response.project_root, realpathSync(project));
     assert.equal(response.state, null);
-    assert.equal(response.next_action.skill, 'nttask');
+    assert.equal(response.next_action.skill, null);
+    assert.match(response.next_action.instruction, /Git repository/u);
     assert.deepEqual(snapshotTree(project), before);
   } finally {
     rmSync(sandbox, { force: true, recursive: true });

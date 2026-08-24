@@ -106,37 +106,6 @@ test('writes canonical UTF-8 LF two-space JSON and cleans transaction files', as
   }
 });
 
-test('commits the validated snapshot when the transition result mutates later', async () => {
-  const project = temporaryProject(
-    'validated-snapshot',
-    Buffer.from('{"next_work_number":1,"current":null}\n'),
-  );
-  const candidate = structuredClone(FIRST_RUN_STATE);
-  const expected = structuredClone(candidate);
-
-  try {
-    const result = await runStateTransaction(
-      project,
-      () => candidate,
-      {
-        faultInjector: (point) => {
-          if (point === 'before-write') {
-            candidate.next_work_number = 0;
-          }
-        },
-      },
-    );
-
-    assert.deepEqual(result, { state: expected, warnings: [] });
-    assert.deepEqual(
-      JSON.parse(readFileSync(join(project, '.ntworkflow', 'state.json'), 'utf8')),
-      expected,
-    );
-  } finally {
-    rmSync(project, { force: true, recursive: true });
-  }
-});
-
 test('runs asynchronous commit preparation under lock before writing state', async () => {
   const original = Buffer.from('{ "next_work_number": 1, "current": null }\r\n');
   const project = temporaryProject('commit-preparation', original);
@@ -153,8 +122,6 @@ test('runs asynchronous commit preparation under lock before writing state', asy
             prepared = true;
             assert.deepEqual(current, EMPTY_STATE);
             assert.deepEqual(next, FIRST_RUN_STATE);
-            assert.equal(Object.isFrozen(next), true);
-            assert.equal(Object.isFrozen(next.current), true);
             assert.equal(existsSync(lockPath), true);
             await Promise.resolve();
             throw new WorkflowError({
@@ -185,8 +152,6 @@ test('calculates a pure transition after lock acquisition and validates its resu
       calls += 1;
       assert.ok(state !== null);
       assert.equal(existsSync(join(project, '.ntworkflow', '.state.lock')), true);
-      assert.equal(Object.isFrozen(state), true);
-      assert.equal(Object.isFrozen(state.current), true);
       return state as State;
     });
     assert.equal(calls, 1);

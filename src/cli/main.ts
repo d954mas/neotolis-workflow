@@ -19,7 +19,7 @@ import {
   stopNttaskPhase,
 } from '../runtime/phase.ts';
 import { readPreflight } from '../runtime/preflight.ts';
-import { resolveProjectRoot } from '../runtime/project-root.ts';
+import { isGitProjectRoot, resolveProjectRoot } from '../runtime/project-root.ts';
 import { cancelRun, completeRun, startRun } from '../runtime/run.ts';
 
 function action(skill: NextSkill, instruction: string): NextAction {
@@ -56,12 +56,17 @@ const COMPLETE_OWNERSHIP_CONFLICT_ACTION = action(
   'Continue in the recorded owner session, or replace it with phase begin nttask --interruption <provider-ended|user-confirmed>.',
 );
 const ACTIVE_PHASE_ACTION = action('nttask', 'Continue the active nttask phase.');
+const NO_GIT_ACTION = action(
+  null,
+  'Initialize Git in this project or run status in an existing Git repository.',
+);
 const DURABLE_INTAKE_ACTION = action(
   'nttask', 'Begin nttask from the durable intake boundary.',
 );
 
-function nextActionFor(state: State | null): NextAction {
+function nextActionFor(state: State | null, canStartRun = true): NextAction {
   if (state === null || state.current === null) {
+    if (!canStartRun) return NO_GIT_ACTION;
     return action('nttask', 'Start nttask with a non-empty task.');
   }
 
@@ -80,7 +85,7 @@ function nextActionFor(state: State | null): NextAction {
     case 'delivery-ready':
       return action(
         'nttask',
-        'Start nttask when ready to close delivery and begin a new run.',
+        'Use run complete to close this run, or start nttask to close it and begin a new run.',
       );
   }
 }
@@ -233,15 +238,17 @@ async function execute(argv: readonly string[]): Promise<number> {
 
   try {
     const result = await executeCommand(parsed);
+    const canStartRun = parsed.command !== 'status'
+      || await isGitProjectRoot(result.projectRoot);
     const response = createSuccessResponse({
       operation: operationForCommand(parsed),
       projectRoot: result.projectRoot,
       state: result.state,
-      nextAction: nextActionFor(result.state),
+      nextAction: nextActionFor(result.state, canStartRun),
       warnings: result.warnings,
     });
     process.stdout.write(serializeResponse(response));
-    return response.ok ? EXIT_CODES.SUCCESS : response.error.exit_code;
+    return EXIT_CODES.SUCCESS;
   } catch (error) {
     let projectRoot = await resolvedRootOrEmpty(parsed.cwd);
     let state: State | null = null;

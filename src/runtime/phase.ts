@@ -1,3 +1,4 @@
+import { SESSION_ID_FORMAT } from '../core/domain.ts';
 import { ERROR_CODES, WorkflowError } from '../core/errors.ts';
 import { providerForSessionId } from '../core/invariants.ts';
 import type { State } from '../core/state.ts';
@@ -24,14 +25,13 @@ export interface BeginNttaskPhaseInput {
   readonly blockerResolved?: boolean;
 }
 
-export interface CompleteNttaskPhaseInput {
+export interface StopNttaskPhaseInput {
   readonly sessionId: string;
-}
-
-export interface StopNttaskPhaseInput extends CompleteNttaskPhaseInput {
   readonly blocker: string;
   readonly interruption?: InterruptionAuthority;
 }
+
+export { completeNttaskPhase } from './nttask.ts';
 
 type ActiveNttaskState = TransactionState & {
   readonly current: NonNullable<TransactionState['current']> & {
@@ -54,7 +54,7 @@ function validateSessionId(sessionId: string): void {
     invalidInput(
       'A canonical provider session ID is required.',
       '--session-id',
-      'claude:<native-id> or codex:<native-id>',
+      SESSION_ID_FORMAT,
     );
   }
 }
@@ -168,18 +168,6 @@ function beginTransition(
   };
 }
 
-export function assertNttaskCompletionAuthority(
-  state: TransactionState | null,
-  input: CompleteNttaskPhaseInput,
-): asserts state is ActiveNttaskState {
-  requireActiveNttask(state, 'phase complete nttask');
-  validateSessionId(input.sessionId);
-  requireOwner(state, input.sessionId);
-  if (state.current.blocker !== null) {
-    illegalTransition('phase complete nttask', state);
-  }
-}
-
 function stopTransition(
   state: TransactionState | null,
   input: StopNttaskPhaseInput,
@@ -209,23 +197,6 @@ export async function beginNttaskPhase(
   return runStateTransaction(projectRoot, (state) => beginTransition(state, input));
 }
 
-export async function completeNttaskPhase(
-  projectRoot: string,
-  input: CompleteNttaskPhaseInput,
-): Promise<StateTransactionResult> {
-  validateSessionId(input.sessionId);
-  return runStateTransaction(projectRoot, (state) => {
-    assertNttaskCompletionAuthority(state, input);
-    throw new WorkflowError({
-      code: ERROR_CODES.ILLEGAL_TRANSITION,
-      message: 'nttask completion requires artifact validation.',
-      details: {
-        actual_lifecycle: state.current.lifecycle,
-        actual_phase: state.current.phase,
-      },
-    });
-  });
-}
 
 export async function stopNttaskPhase(
   projectRoot: string,

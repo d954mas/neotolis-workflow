@@ -1,4 +1,5 @@
 import { ERROR_CODES, WorkflowError } from './errors.ts';
+import { FINAL_REVIEW_KEYS, PROVIDERS, SESSION_ID_FORMAT } from './domain.ts';
 import type {
   Current,
   Lifecycle,
@@ -12,7 +13,6 @@ import type {
 
 const RUN_ID_PATTERN = /^NT-(\d{3,})$/u;
 const TASK_ID_PATTERN = /^NT-(\d{3,})-(\d{2,})$/u;
-const SESSION_ID_PATTERN = /^(claude|codex):([^\s:]+)$/u;
 
 const LEGAL_PHASES: Readonly<Record<Lifecycle, Phase | null>> = Object.freeze({
   'intake-active': 'nttask',
@@ -36,14 +36,23 @@ function requireNonEmpty(value: string, path: string): void {
 }
 
 export function providerForSessionId(sessionId: string): Provider | null {
-  const match = SESSION_ID_PATTERN.exec(sessionId);
-  return match === null ? null : match[1] as Provider;
+  const [provider, nativeId, extra] = sessionId.split(':');
+  if (
+    extra !== undefined
+    || nativeId === undefined
+    || nativeId.length === 0
+    || /\s/u.test(nativeId)
+    || !PROVIDERS.includes(provider as Provider)
+  ) {
+    return null;
+  }
+  return provider as Provider;
 }
 
 function sessionProvider(sessionId: string, path: string): Provider {
   const provider = providerForSessionId(sessionId);
   if (provider === null) {
-    workflowStateError(path, 'canonical claude:<native-id> or codex:<native-id> session ID');
+    workflowStateError(path, `canonical ${SESSION_ID_FORMAT} session ID`);
   }
   return provider;
 }
@@ -205,19 +214,13 @@ function validateVerdictSequence(work: Work): void {
       'whole-plan validation requires every task to be completed',
     );
   }
-  if (verdicts.nyquist !== 'pending' && verdicts.whole_plan !== 'pass') {
-    workflowStateError(
-      '$.current.work.verdicts.nyquist',
-      'Nyquist verdict requires whole-plan validation to pass',
-    );
-  }
-  if (
-    (verdicts.spec_integration !== 'pending' || verdicts.code_review !== 'pending')
-    && verdicts.nyquist !== 'pass'
-  ) {
+  const hasFinalReview = FINAL_REVIEW_KEYS.some(
+    (key) => verdicts[key] !== 'pending',
+  );
+  if (hasFinalReview && verdicts.whole_plan !== 'pass') {
     workflowStateError(
       '$.current.work.verdicts',
-      'final reviews require Nyquist to pass',
+      'final review verdicts require whole-plan validation to pass',
     );
   }
 }
@@ -323,19 +326,17 @@ function validateDeliveryReady(current: Current, work: Work): void {
     || work.provider === null
     || work.branch === null
     || work.base_branch === null
-    || work.pull_request === null
     || work.head_commit === null
     || !allTasksCompleted(work)
     || work.evidence.length === 0
     || work.verdicts.whole_plan !== 'pass'
-    || work.verdicts.nyquist !== 'pass'
-    || work.verdicts.spec_integration !== 'pass'
-    || work.verdicts.code_review !== 'pass'
-    || work.verdicts.ci !== 'pass'
+    || !FINAL_REVIEW_KEYS.every((key) => work.verdicts[key] === 'pass')
+    || (work.verdicts.ci !== 'pass'
+      && work.verdicts.ci !== 'not-required')
   ) {
     workflowStateError(
       '$.current.work',
-      'delivery-ready requires completed tasks, delivery identity, evidence, and all gates passing',
+      'delivery-ready requires completed tasks, delivery identity, evidence, and all applicable gates passing',
     );
   }
 }

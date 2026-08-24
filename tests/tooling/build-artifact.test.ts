@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import {
-  globSync,
   mkdtempSync,
   mkdirSync,
   readFileSync,
@@ -11,31 +10,8 @@ import {
 } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
-import { pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import test, { before } from 'node:test';
-
-interface BuiltErrors {
-  ERROR_CODES: Record<string, string>;
-  EXIT_CODES: Record<string, number>;
-  WorkflowError: new (options: {
-    code: string;
-    message: string;
-  }) => Error & { readonly exitCode: number };
-}
-
-interface BuiltProtocol {
-  createFailureResponse: (context: {
-    operation: string;
-    projectRoot: string;
-    state: null;
-    nextAction: { skill: null; instruction: string };
-    warnings: string[];
-    error: Error;
-  }) => {
-    error: { code: string; exit_code: number };
-  };
-}
 
 function listFiles(root: string, directory = root): string[] {
   const files: string[] = [];
@@ -48,20 +24,6 @@ function listFiles(root: string, directory = root): string[] {
     }
   }
   return files.sort();
-}
-
-function expectedEntryFiles(): string[] {
-  const sourceRoot = resolve('src');
-
-  return globSync('src/**/*.ts')
-    .map((sourceFile) => {
-      const entry = relative(sourceRoot, resolve(sourceFile))
-        .replaceAll('\\', '/')
-        .slice(0, -3);
-      const output = entry === 'cli/main' ? 'cli/ntworkflow' : entry;
-      return `${output}.mjs`;
-    })
-    .sort();
 }
 
 function snapshotTree(root: string, directory = root): Record<string, string> {
@@ -86,54 +48,9 @@ before(() => {
   assert.equal(buildResult.status, 0, buildResult.stderr);
 });
 
-test('built modules preserve workflow error identity and stable exit codes', async () => {
-  const cacheKey = `review-fix-${Date.now()}`;
-  const errors = await import(
-    `${pathToFileURL(resolve('build/core/errors.mjs')).href}?${cacheKey}`
-  ) as BuiltErrors;
-  const protocol = await import(
-    `${pathToFileURL(resolve('build/core/protocol.mjs')).href}?${cacheKey}`
-  ) as BuiltProtocol;
-
-  for (const [name, code] of Object.entries(errors.ERROR_CODES)) {
-    const error = new errors.WorkflowError({ code, message: name });
-    const response = protocol.createFailureResponse({
-      operation: 'test',
-      projectRoot: '/work/project',
-      state: null,
-      nextAction: { skill: null, instruction: 'None.' },
-      warnings: [],
-      error,
-    });
-
-    assert.deepEqual(response.error, {
-      code,
-      exit_code: error.exitCode,
-      message: name,
-      details: null,
-    });
-  }
+test('build exposes only the ntworkflow CLI entry point', () => {
+  assert.deepEqual(listFiles(resolve('build')), ['cli/ntworkflow.mjs']);
 });
-
-test('build output follows source entries and exposes only the TB-03 CLI', () => {
-  const outputFiles = listFiles(resolve('build'));
-  const entryFiles = outputFiles.filter((file) => !file.startsWith('chunks/'));
-  const chunkFiles = outputFiles.filter((file) => file.startsWith('chunks/'));
-
-  assert.deepEqual(entryFiles, expectedEntryFiles());
-  assert.deepEqual(
-    entryFiles.filter((file) => file.startsWith('cli/')),
-    [
-      'cli/arguments.mjs',
-      'cli/ntworkflow.mjs',
-    ],
-  );
-  assert.equal(chunkFiles.length > 0, true);
-  for (const chunkFile of chunkFiles) {
-    assert.match(chunkFile, /^chunks\/chunk-[A-Z0-9]+\.mjs$/);
-  }
-});
-
 test('built status resolves nested Git, worktree, and no-Git roots without mutation', () => {
   const fixtureRoot = mkdtempSync(join(tmpdir(), 'ntworkflow-built-status-'));
   try {
@@ -154,9 +71,9 @@ test('built status resolves nested Git, worktree, and no-Git roots without mutat
     mkdirSync(noGitCwd, { recursive: true });
 
     const cases = [
-      { cwd: gitCwd, expectedRoot: gitRoot },
-      { cwd: worktreeCwd, expectedRoot: worktreeRoot },
-      { cwd: noGitCwd, expectedRoot: noGitCwd },
+      { cwd: gitCwd, expectedRoot: gitRoot, expectedSkill: 'nttask' },
+      { cwd: worktreeCwd, expectedRoot: worktreeRoot, expectedSkill: 'nttask' },
+      { cwd: noGitCwd, expectedRoot: noGitCwd, expectedSkill: null },
     ];
 
     for (const scenario of cases) {
@@ -175,14 +92,14 @@ test('built status resolves nested Git, worktree, and no-Git roots without mutat
         ok: boolean;
         project_root: string;
         state: unknown;
-        next_action: { skill: string };
+        next_action: { skill: string | null };
       };
 
       assert.equal(result.status, 0, result.stderr);
       assert.equal(response.ok, true);
       assert.equal(response.project_root, realpathSync(scenario.expectedRoot));
       assert.equal(response.state, null);
-      assert.equal(response.next_action.skill, 'nttask');
+      assert.equal(response.next_action.skill, scenario.expectedSkill);
       assert.deepEqual(snapshotTree(fixtureRoot), before);
     }
   } finally {

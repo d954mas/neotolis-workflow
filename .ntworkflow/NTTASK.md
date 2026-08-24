@@ -1,7 +1,6 @@
 # `nttask` Phase Contract
 
 **Status:** Confirmed on 2026-08-09
-**Implementation:** Not started
 **Output:** `.ntworkflow/runs/<run-id>/BRIEF.md`
 **Completed state:** `brief-ready`
 

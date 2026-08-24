@@ -48,85 +48,11 @@ export type JsonValue = JsonPrimitive | readonly JsonValue[] | {
 };
 export type ErrorDetails = JsonValue;
 
-function snapshotJsonValueInternal(
-  value: unknown,
-  ancestors: Set<object>,
-): JsonValue | undefined {
-  if (value === null || typeof value === 'string' || typeof value === 'boolean') {
-    return value;
-  }
-  if (typeof value === 'number') {
-    return Number.isFinite(value) ? value : undefined;
-  }
-  if (typeof value !== 'object' || ancestors.has(value)) {
-    return undefined;
-  }
-
-  ancestors.add(value);
-  try {
-    if (Array.isArray(value)) {
-      const keys = Reflect.ownKeys(value);
-      const lengthDescriptor = Object.getOwnPropertyDescriptor(value, 'length');
-      if (
-        lengthDescriptor === undefined
-        || !('value' in lengthDescriptor)
-        || !Number.isSafeInteger(lengthDescriptor.value)
-        || lengthDescriptor.value < 0
-        || keys.length !== lengthDescriptor.value + 1
-      ) {
-        return undefined;
-      }
-
-      const snapshot: JsonValue[] = [];
-      for (let index = 0; index < lengthDescriptor.value; index += 1) {
-        const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
-        if (descriptor === undefined || !descriptor.enumerable || !('value' in descriptor)) {
-          return undefined;
-        }
-        const entry = snapshotJsonValueInternal(descriptor.value, ancestors);
-        if (entry === undefined) {
-          return undefined;
-        }
-        snapshot.push(entry);
-      }
-      return Object.freeze(snapshot);
-    }
-
-    const prototype = Object.getPrototypeOf(value);
-    if (prototype !== Object.prototype && prototype !== null) {
-      return undefined;
-    }
-
-    const snapshot: { [key: string]: JsonValue } = {};
-    for (const key of Reflect.ownKeys(value)) {
-      if (typeof key !== 'string') {
-        return undefined;
-      }
-      const descriptor = Object.getOwnPropertyDescriptor(value, key);
-      if (descriptor === undefined || !descriptor.enumerable || !('value' in descriptor)) {
-        return undefined;
-      }
-      const entry = snapshotJsonValueInternal(descriptor.value, ancestors);
-      if (entry === undefined) {
-        return undefined;
-      }
-      Object.defineProperty(snapshot, key, {
-        enumerable: true,
-        value: entry,
-      });
-    }
-    return Object.freeze(snapshot);
-  } finally {
-    ancestors.delete(value);
-  }
-}
-
-export function createJsonSnapshot(value: unknown): JsonValue | undefined {
-  try {
-    return snapshotJsonValueInternal(value, new Set());
-  } catch {
-    return undefined;
-  }
+export function hasErrorCode(error: unknown, code: string): boolean {
+  return error !== null
+    && typeof error === 'object'
+    && 'code' in error
+    && error.code === code;
 }
 
 export interface WorkflowErrorOptions {
@@ -149,74 +75,27 @@ export class WorkflowError extends Error {
   readonly exitCode: FailureExitCode;
 
   constructor(options: WorkflowErrorOptions) {
-    let code: ErrorCode = ERROR_CODES.INTERNAL_FAILURE;
-    let message = 'An internal error occurred.';
-    let details: ErrorDetails = null;
-
-    try {
-      const candidateCode = options.code;
-      const candidateMessage = options.message;
-      const candidateDetails = options.details ?? null;
-
-      if (Object.values(ERROR_CODES).includes(candidateCode)) {
-        code = candidateCode;
-      }
-      if (typeof candidateMessage === 'string') {
-        message = candidateMessage;
-      }
-      const detailsSnapshot = createJsonSnapshot(candidateDetails);
-      if (detailsSnapshot !== undefined) {
-        details = detailsSnapshot;
-      }
-    } catch {
-      // Keep the constant internal-error defaults.
-    }
-
-    super(message);
-    this.code = code;
-    this.details = details;
-    this.exitCode = ERROR_EXIT_CODES[code];
+    super(options.message);
+    this.code = options.code;
+    this.details = options.details ?? null;
+    this.exitCode = ERROR_EXIT_CODES[options.code];
   }
 }
 
 export function normalizeCaughtError(error: unknown): NormalizedWorkflowError {
-  const internalError: NormalizedWorkflowError = {
-    code: ERROR_CODES.INTERNAL_FAILURE,
-    exitCode: EXIT_CODES.INTERNAL_FAILURE,
-    message: 'An internal error occurred.',
-    details: null,
-  };
-
-  try {
-    if (error instanceof WorkflowError) {
-      const code = error.code;
-      const message = error.message;
-      const details = error.details;
-      if (!Object.values(ERROR_CODES).includes(code) || typeof message !== 'string') {
-        return internalError;
-      }
-
-      return {
-        code,
-        exitCode: ERROR_EXIT_CODES[code],
-        message,
-        details: createJsonSnapshot(details) ?? null,
-      };
-    }
-
-    if (error instanceof Error) {
-      const message = error.message;
-      if (typeof message !== 'string') {
-        return internalError;
-      }
-      return {
-        ...internalError,
-        message,
-      };
-    }
-  } catch {
-    return internalError;
+  if (error instanceof WorkflowError) {
+    return {
+      code: error.code,
+      exitCode: error.exitCode,
+      message: error.message,
+      details: error.details,
+    };
   }
 
-  return internalError;
+  return {
+    code: ERROR_CODES.INTERNAL_FAILURE,
+    exitCode: EXIT_CODES.INTERNAL_FAILURE,
+    message: error instanceof Error ? error.message : 'An internal error occurred.',
+    details: null,
+  };
 }

@@ -125,7 +125,7 @@ test('CLI stop accepts blocker as one Windows argv element', () => {
   }
 });
 
-test('CLI complete preserves ownership until the TB-07 artifact gate', () => {
+test('CLI complete preserves ownership when the BRIEF artifact gate fails', () => {
   const project = temporaryProject(
     'cli-complete',
     intakeState({ owner: FIRST_OWNER }),
@@ -138,13 +138,13 @@ test('CLI complete preserves ownership until the TB-07 artifact gate', () => {
     );
     const response = cliResponse(result);
 
-    assert.equal(result.status, 11);
-    assert.equal(response.error?.code, 'ILLEGAL_TRANSITION');
+    assert.equal(result.status, 14);
+    assert.equal(response.error?.code, 'ARTIFACT_FAILURE');
     assert.deepEqual(response.state.current?.owner, { session_id: FIRST_OWNER });
     assert.deepEqual(stateBytes(project), before);
     assert.deepEqual(response.next_action, {
       skill: 'nttask',
-      instruction: 'Continue the active nttask phase.',
+      instruction: 'Resolve the reported phase failure before retrying nttask.',
     });
   } finally {
     rmSync(project, { force: true, recursive: true });

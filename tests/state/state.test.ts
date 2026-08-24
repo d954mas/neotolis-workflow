@@ -297,6 +297,36 @@ test('reads legal phase-owned and interrupted future-state boundaries', () => {
   parseState(blockedFinalReview);
 });
 
+test('reads independent final review verdicts after whole-plan validation passes', () => {
+  const reviewing = readFixture('delivery-ready.json') as State;
+  const current = currentOf(reviewing);
+  current.lifecycle = 'work-active';
+  current.phase = 'ntwork';
+  current.owner = { session_id: 'claude:parallel-review' };
+
+  const verdicts = workOf(reviewing).verdicts;
+  verdicts.nyquist = 'pending';
+  verdicts.spec_integration = 'pass';
+  verdicts.code_review = 'pending';
+  verdicts.ci = 'pending';
+
+  parseState(reviewing);
+});
+
+test('reads delivery-ready without an optional pull request', () => {
+  const delivery = readFixture('delivery-ready.json') as State;
+  workOf(delivery).pull_request = null;
+
+  parseState(delivery);
+});
+
+test('reads delivery-ready when hosted CI is not required', () => {
+  const delivery = readFixture('delivery-ready.json') as State;
+  Reflect.set(workOf(delivery).verdicts, 'ci', 'not-required');
+
+  parseState(delivery);
+});
+
 test('enforces work presence and the pristine plan-approved boundary', () => {
   const earlyWork = readFixture('brief-ready.json') as State;
   const planApproved = readFixture('plan-approved.json') as State;
@@ -358,12 +388,19 @@ test('enforces work identity, final-gate sequencing, and delivery readiness', ()
   expectInvalidState(nyquistTooSoon);
 
   const reviewTooSoon = readFixture('delivery-ready.json') as State;
-  workOf(reviewTooSoon).verdicts.nyquist = 'block';
+  workOf(reviewTooSoon).verdicts.whole_plan = 'fail';
+  workOf(reviewTooSoon).verdicts.nyquist = 'pending';
   expectInvalidState(reviewTooSoon);
 
   const incompleteDelivery = readFixture('delivery-ready.json') as State;
   workOf(incompleteDelivery).verdicts.code_review = 'block';
   expectInvalidState(incompleteDelivery);
+
+  for (const ci of ['pending', 'fail'] as const) {
+    const incompleteCi = readFixture('delivery-ready.json') as State;
+    workOf(incompleteCi).verdicts.ci = ci;
+    expectInvalidState(incompleteCi);
+  }
 });
 
 test('does not mutate parsed inputs or fixture files', () => {

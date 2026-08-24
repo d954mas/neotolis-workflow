@@ -1,7 +1,6 @@
 # Neotolis Workflow Runtime Contract
 
 **Status:** Confirmed on 2026-08-10
-**Implementation:** Not started
 
 ## Purpose
 
@@ -83,6 +82,10 @@ There is no artifact registry, manifest, runtime handoff, event journal,
 separate work-status file, retained research packet, or artifact-version
 archive. Git tracking policy remains entirely the user's choice.
 
+The nearest ancestor with a valid `.git` directory or worktree file is the
+consumer root. Read-only status uses the supplied directory when no Git root
+exists; `run start` rejects that case before creating workflow files.
+
 ## Current state
 
 `.ntworkflow/state.json` is the only mutable workflow-state file. Its
@@ -123,7 +126,7 @@ Work {
     nyquist: pending | pass | block,
     spec_integration: pending | pass | block,
     code_review: pending | pass | block,
-    ci: pending | pass | fail
+    ci: pending | pass | fail | not-required
   }
 }
 Task {
@@ -140,10 +143,12 @@ Task {
 task set for `plan-approved`, `work-active`, and `delivery-ready`. At most one
 task is `active`. `provider` is set on entry to `work-active` and remains
 unchanged through `delivery-ready`. Native reviewer `PASS | BLOCK` values are
-stored as lowercase `pass | block`; executable validation and CI use
-`pass | fail`. Evidence stores the concise procedure, revision, observed
-result, expected condition, and native source IDs required by `ntwork`; raw
-evidence content remains in its native source.
+stored as lowercase `pass | block`; executable validation uses `pass | fail`.
+Configured CI uses `pending | pass | fail`; `not-required` records the explicit
+decision that no hosted CI gate applies. A `delivery-ready` run accepts CI only
+as `pass` or `not-required`. Evidence stores the concise procedure, revision,
+observed result, expected condition, and native source IDs required by
+`ntwork`; raw evidence content remains in its native source.
 
 It does not retain completed session history, subagent relationships, or event
 timelines. It is not copied into run directories.
