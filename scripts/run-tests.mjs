@@ -6,6 +6,8 @@ const pattern = suite === undefined
   ? 'tests/**/*.test.ts'
   : suite === 'provider-claude'
     ? 'tests/providers/claude-code/**/*.test.ts'
+    : suite === 'provider-codex'
+      ? 'tests/providers/codex/**/*.test.ts'
     : `tests/${suite}/**/*.test.ts`;
 const testFiles = globSync(pattern).sort();
 

@@ -1,0 +1,18 @@
+{
+  "name": "neotolis-workflow",
+  "version": "0.0.0",
+  "description": "Rigorous task intake for Neotolis Workflow.",
+  "author": {
+    "name": "Neotolis"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Neotolis Workflow",
+    "shortDescription": "Rigorous task intake for large development work.",
+    "longDescription": "Start the Neotolis Workflow intake and create its canonical task brief.",
+    "developerName": "Neotolis",
+    "category": "Developer Tools",
+    "capabilities": [],
+    "defaultPrompt": "Start a rigorous Neotolis task intake."
+  }
+}
