@@ -1,0 +1,8 @@
+{
+  "name": "neotolis-workflow",
+  "version": "0.0.0",
+  "description": "Rigorous task intake for Neotolis Workflow.",
+  "author": {
+    "name": "Neotolis"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Expose native Claude session identity to Neotolis Workflow.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/runtime/session-start.mjs\" \"${CLAUDE_PLUGIN_ROOT}/runtime/ntworkflow.mjs\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

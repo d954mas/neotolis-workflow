@@ -1,0 +1,15 @@
+{
+  "name": "neotolis-local",
+  "owner": {
+    "name": "Neotolis"
+  },
+  "description": "Local Neotolis Workflow plugins.",
+  "plugins": [
+    {
+      "name": "neotolis-workflow",
+      "source": "./plugins/neotolis-workflow",
+      "version": "0.0.0",
+      "description": "Rigorous task intake for Neotolis Workflow."
+    }
+  ]
+}

@@ -4,7 +4,9 @@ import { spawnSync } from 'node:child_process';
 const [suite, ...extraArguments] = process.argv.slice(2);
 const pattern = suite === undefined
   ? 'tests/**/*.test.ts'
-  : `tests/${suite}/**/*.test.ts`;
+  : suite === 'provider-claude'
+    ? 'tests/providers/claude-code/**/*.test.ts'
+    : `tests/${suite}/**/*.test.ts`;
 const testFiles = globSync(pattern).sort();
 
 if (testFiles.length === 0) {
