@@ -177,7 +177,8 @@ function commandArguments(arguments_: readonly string[], owner: string, otherOwn
 }
 
 function runScenario(corpusScenario: Scenario, adapter: Adapter): ScenarioResult {
-  const fixture = mkdtempSync(join(tmpdir(), `ntworkflow-conformance-${adapter.provider}-`));
+  // Match the CLI native realpath, including Windows 8.3 temporary paths.
+  const fixture = realpathSync.native(mkdtempSync(join(tmpdir(), `ntworkflow-conformance-${adapter.provider}-`)));
   try {
     if (corpusScenario.git) mkdirSync(join(fixture, '.git'));
     for (const seed of corpusScenario.seed ?? []) {
