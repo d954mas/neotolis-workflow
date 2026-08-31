@@ -291,11 +291,13 @@ test('pinned Codex installs and discovers the staged plugin without a model call
       assert.equal(skillsResponse.data.length, 1);
       assert.equal(realpathSync(skillsResponse.data[0]?.cwd as string), realpathSync(project));
       assert.deepEqual(skillsResponse.data[0]?.errors, []);
-      const skill = skillsResponse.data[0]?.skills.find(
-        (entry) => entry.name === 'neotolis-workflow:nttask',
+      const skills = skillsResponse.data[0]?.skills.filter(
+        (entry) => entry.name.startsWith('neotolis-workflow:'),
       );
-      assert.ok(skill !== undefined, JSON.stringify(skillsResponse));
-      assert.equal(skill.enabled, true);
+      assert.deepEqual(skills?.map(({ name }) => name).sort(), [
+        'neotolis-workflow:ntgrill', 'neotolis-workflow:nttask',
+      ]);
+      assert.ok(skills?.every(({ enabled }) => enabled));
 
       const hooksResponse = await server.request<HooksListResult>(2, 'hooks/list', {
         cwds: [project],
@@ -319,7 +321,9 @@ test('pinned Codex installs and discovers the staged plugin without a model call
         'hooks/hooks.json',
         'runtime/ntworkflow.mjs',
         'runtime/session-start.mjs',
-        'skills/nttask/SKILL.md',
+        'skills/ntgrill/LICENSE',
+    'skills/ntgrill/SKILL.md',
+    'skills/nttask/SKILL.md',
       ]);
       assert.equal(
         hook.command,

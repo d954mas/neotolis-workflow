@@ -8,6 +8,6 @@ test('recorded Claude and Codex adapters have equivalent runtime semantics', () 
   const results = corpus.adapters.map((adapter) => runProviderCorpus(corpus, adapter));
 
   assert.deepEqual(corpus.adapters.map((adapter) => adapter.provider), ['claude', 'codex']);
-  assert.equal(results[0]?.scenarios.length, 4);
+  assert.equal(results[0]?.scenarios.length, 6);
   assert.deepEqual(results[1]?.scenarios, results[0]?.scenarios);
 });

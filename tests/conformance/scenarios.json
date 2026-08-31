@@ -78,6 +78,39 @@
       "steps": [
         { "cli": ["status"] }
       ]
+    },
+    {
+      "name": "confirmed grilling and later rejection",
+      "git": true,
+      "steps": [
+        {"cli":["run","start","--session-id","$owner"]},
+        {"cli":["phase","begin","nttask","--session-id","$owner"]},
+        {"write":{"path":".ntworkflow/runs/NT-001/BRIEF.md","fixture":"tests/fixtures/briefs/valid.md"}},
+        {"cli":["phase","complete","nttask","--session-id","$owner"]},
+        {"cli":["phase","begin","ntgrill","--session-id","$other_owner"]},
+        {"cli":["phase","complete","ntgrill","--session-id","$other_owner"]},
+        {"cli":["phase","complete","ntgrill","--session-id","$other_owner","--user-confirmed"]},
+        {"write":{"path":".ntworkflow/runs/NT-001/BRIEF.md","fixture":"tests/fixtures/briefs/grilled.md"}},
+        {"cli":["phase","complete","ntgrill","--session-id","$other_owner","--user-confirmed"]},
+        {"cli":["phase","begin","ntgrill","--session-id","$owner"]}
+      ]
+    },
+    {
+      "name": "grilling ownership restart and blocker",
+      "git": true,
+      "steps": [
+        {"cli":["run","start","--session-id","$owner"]},
+        {"cli":["phase","begin","nttask","--session-id","$owner"]},
+        {"write":{"path":".ntworkflow/runs/NT-001/BRIEF.md","fixture":"tests/fixtures/briefs/valid.md"}},
+        {"cli":["phase","complete","nttask","--session-id","$owner"]},
+        {"cli":["phase","begin","ntgrill","--session-id","$owner"]},
+        {"cli":["phase","begin","ntgrill","--session-id","$owner"]},
+        {"cli":["phase","begin","ntgrill","--session-id","$other_owner","--interruption","user-confirmed"]},
+        {"cli":["phase","stop","ntgrill","--session-id","$other_owner","--blocker","Need source."]},
+        {"cli":["phase","begin","ntgrill","--session-id","$other_owner"]},
+        {"cli":["phase","begin","ntgrill","--session-id","$other_owner","--blocker-resolved"]},
+        {"cli":["run","cancel","--session-id","$other_owner","--user-confirmed"]}
+      ]
     }
   ]
 }

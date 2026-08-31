@@ -14,10 +14,11 @@ import {
 import type { NextAction, NextSkill } from '../core/protocol.ts';
 import type { State } from '../core/state.ts';
 import {
-  beginNttaskPhase,
+  beginPhase,
   completeNttaskPhase,
-  stopNttaskPhase,
+  stopPhase,
 } from '../runtime/phase.ts';
+import { completeNtgrillPhase } from '../runtime/ntgrill.ts';
 import { readPreflight } from '../runtime/preflight.ts';
 import { isGitProjectRoot, resolveProjectRoot } from '../runtime/project-root.ts';
 import { cancelRun, completeRun, startRun } from '../runtime/run.ts';
@@ -39,23 +40,17 @@ const RUN_FAILURE_ACTION = action(
   null,
   'Resolve the reported run failure before retrying.',
 );
-const PHASE_FAILURE_ACTION = action(
-  'nttask',
-  'Resolve the reported phase failure before retrying nttask.',
-);
-const OWNERSHIP_CONFLICT_ACTION = action(
-  'nttask',
-  'Continue in the recorded owner session, or retry with explicit --interruption authority.',
-);
-const UNRESOLVED_BLOCKER_ACTION = action(
-  'nttask',
-  'Resolve the recorded blocker, then retry phase begin nttask with --blocker-resolved.',
-);
-const COMPLETE_OWNERSHIP_CONFLICT_ACTION = action(
-  'nttask',
-  'Continue in the recorded owner session, or replace it with phase begin nttask --interruption <provider-ended|user-confirmed>.',
-);
-const ACTIVE_PHASE_ACTION = action('nttask', 'Continue the active nttask phase.');
+function phaseFailureAction(phase: 'nttask' | 'ntgrill'): NextAction {
+  return action(phase, `Resolve the reported phase failure before retrying ${phase}.`);
+}
+function blockerAction(phase: 'nttask' | 'ntgrill'): NextAction {
+  return action(phase, `Resolve the recorded blocker, then retry phase begin ${phase} with --blocker-resolved.`);
+}
+function ownerAction(phase: 'nttask' | 'ntgrill', completing: boolean): NextAction {
+  return action(phase, completing
+    ? `Continue in the recorded owner session, or replace it with phase begin ${phase} --interruption <provider-ended|user-confirmed>.`
+    : 'Continue in the recorded owner session, or retry with explicit --interruption authority.');
+}
 const NO_GIT_ACTION = action(
   null,
   'Initialize Git in this project or run status in an existing Git repository.',
@@ -72,10 +67,12 @@ function nextActionFor(state: State | null, canStartRun = true): NextAction {
 
   switch (state.current.lifecycle) {
     case 'intake-active':
-      if (state.current.blocker !== null) return UNRESOLVED_BLOCKER_ACTION;
-      if (state.current.phase === 'nttask') return ACTIVE_PHASE_ACTION;
+      if (state.current.blocker !== null) return blockerAction('nttask');
+      if (state.current.phase === 'nttask') return action('nttask', 'Continue the active nttask phase.');
       return DURABLE_INTAKE_ACTION;
     case 'brief-ready':
+      if (state.current.blocker !== null) return blockerAction('ntgrill');
+      if (state.current.phase === 'ntgrill') return action('ntgrill', 'Continue the active ntgrill phase.');
       return action('ntgrill', 'Continue with ntgrill.');
     case 'plan-ready':
       return action('ntplan', 'Continue with ntplan.');
@@ -152,9 +149,9 @@ async function executePhase(parsed: PhaseArguments): Promise<CommandResult> {
   const projectRoot = await resolveProjectRoot(parsed.cwd);
 
   if (parsed.operation === 'complete') {
-    const result = await completeNttaskPhase(projectRoot, {
-      sessionId: parsed.sessionId,
-    });
+    const result = parsed.phase === 'ntgrill'
+      ? await completeNtgrillPhase(projectRoot, { sessionId: parsed.sessionId, userConfirmed: parsed.userConfirmed === true })
+      : await completeNttaskPhase(projectRoot, { sessionId: parsed.sessionId });
     return { projectRoot, ...result };
   }
 
@@ -162,7 +159,7 @@ async function executePhase(parsed: PhaseArguments): Promise<CommandResult> {
     ? {}
     : { interruption: parsed.interruption };
   if (parsed.operation === 'begin') {
-    const result = await beginNttaskPhase(projectRoot, {
+    const result = await beginPhase(projectRoot, parsed.phase, {
       sessionId: parsed.sessionId,
       blockerResolved: parsed.blockerResolved,
       ...interruption,
@@ -170,7 +167,7 @@ async function executePhase(parsed: PhaseArguments): Promise<CommandResult> {
     return { projectRoot, ...result };
   }
 
-  const result = await stopNttaskPhase(projectRoot, {
+  const result = await stopPhase(projectRoot, parsed.phase, {
     sessionId: parsed.sessionId,
     blocker: parsed.blocker,
     ...interruption,
@@ -187,7 +184,7 @@ function executeCommand(parsed: CliArguments): Promise<CommandResult> {
 function operationForCommand(parsed: CliArguments): string {
   if (parsed.command === 'status') return 'status';
   if (parsed.command === 'run') return `run ${parsed.operation}`;
-  return `phase ${parsed.operation} nttask`;
+  return `phase ${parsed.operation} ${parsed.phase}`;
 }
 
 function failureAction(
@@ -201,7 +198,7 @@ function failureAction(
       ? nextActionFor(state)
       : RUN_FAILURE_ACTION;
   }
-  if (!(error instanceof WorkflowError)) return PHASE_FAILURE_ACTION;
+  if (!(error instanceof WorkflowError)) return phaseFailureAction(parsed.phase);
 
   switch (error.code) {
     case ERROR_CODES.INVALID_INPUT:
@@ -209,12 +206,11 @@ function failureAction(
     case ERROR_CODES.ILLEGAL_TRANSITION:
       return nextActionFor(state);
     case ERROR_CODES.OWNERSHIP_CONFLICT:
-      return parsed.operation === 'complete'
-        ? COMPLETE_OWNERSHIP_CONFLICT_ACTION : OWNERSHIP_CONFLICT_ACTION;
+      return ownerAction(parsed.phase, parsed.operation === 'complete');
     case ERROR_CODES.UNRESOLVED_BLOCKER:
-      return UNRESOLVED_BLOCKER_ACTION;
+      return blockerAction(parsed.phase);
     default:
-      return PHASE_FAILURE_ACTION;
+      return phaseFailureAction(parsed.phase);
   }
 }
 

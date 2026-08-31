@@ -13,17 +13,19 @@ function filesUnder(root: string, directory = root): string[] {
   return files.sort();
 }
 
-test('Claude plugin contains only nttask, identity hook, and runtime files', () => {
+test('Claude plugin contains only nttask, ntgrill, license, identity hook, and runtime files', () => {
   assert.deepEqual(filesUnder(resolve('plugins/claude-code')), [
     '.claude-plugin/plugin.json',
     'hooks/hooks.json',
     'runtime/ntworkflow.mjs',
     'runtime/session-start.mjs',
+    'skills/ntgrill/LICENSE',
+    'skills/ntgrill/SKILL.md',
     'skills/nttask/SKILL.md',
   ]);
 });
 
-test('Claude manifests expose the local namespaced nttask plugin', () => {
+test('Claude manifests expose the local namespaced workflow plugin', () => {
   const plugin = JSON.parse(readFileSync(
     'plugins/claude-code/.claude-plugin/plugin.json',
     'utf8',
@@ -31,7 +33,7 @@ test('Claude manifests expose the local namespaced nttask plugin', () => {
   assert.deepEqual(plugin, {
     name: 'neotolis-workflow',
     version: '0.0.0',
-    description: 'Rigorous task intake for Neotolis Workflow.',
+    description: 'Rigorous task intake and decision grilling for Neotolis Workflow.',
     author: { name: 'Neotolis' },
   });
 
@@ -47,7 +49,7 @@ test('Claude manifests expose the local namespaced nttask plugin', () => {
       name: 'neotolis-workflow',
       source: './plugins/neotolis-workflow',
       version: '0.0.0',
-      description: 'Rigorous task intake for Neotolis Workflow.',
+      description: 'Rigorous task intake and decision grilling for Neotolis Workflow.',
     }],
   });
 });

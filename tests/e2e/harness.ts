@@ -14,7 +14,7 @@ const { adapters } = loadCorpus('tests/conformance/scenarios.json');
 type Adapter = (typeof adapters)[number];
 type Response = ProtocolResponse<State | null>;
 
-function tree(root: string, directory = root): Record<string, Buffer | 'directory'> {
+export function tree(root: string, directory = root): Record<string, Buffer | 'directory'> {
   const entries: Record<string, Buffer | 'directory'> = {};
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
     const path = join(directory, entry.name);
