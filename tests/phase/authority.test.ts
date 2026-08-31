@@ -8,9 +8,9 @@ import { ERROR_CODES } from '../../src/core/errors.ts';
 import type { WorkflowError } from '../../src/core/errors.ts';
 import {
   beginNttaskPhase,
-  completeNttaskPhase,
   stopNttaskPhase,
 } from '../../src/runtime/phase.ts';
+import { completeNttaskPhase } from '../../src/runtime/nttask.ts';
 import {
   CODEX_OWNER,
   FIRST_OWNER,

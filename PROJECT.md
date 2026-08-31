@@ -218,8 +218,12 @@ cancel one another on failure. **TB-AC-11 passed on the tracer commit above**:
 [Ubuntu](https://github.com/d954mas/neotolis-workflow/actions/runs/33370135714/job/99419111676)
 and [macOS](https://github.com/d954mas/neotolis-workflow/actions/runs/33370135714/job/99419111512)
 (189 passed each). Packaging was 5/5 per job; E2E was 10/10.
-These jobs do not cover ntgrill or any later changes. A local Windows pass is
-not three-platform evidence; fresh CI needs an authorized commit and push.
+Those tracer jobs do not cover ntgrill. The separate ntgrill slice passed
+[CI run 33386366276](https://github.com/d954mas/neotolis-workflow/actions/runs/33386366276)
+on commit `02ec60bb2f4b2e8f0edb9b965e08e37f9fafb7ae`: Windows had 207 passed
+and one platform skip; Ubuntu and macOS had 208 passed each. Packaging was
+5/5 on every platform. This is commit-specific evidence; subsequent changes
+require their own CI run.
 
 CI references: [GitHub matrix jobs](https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/run-job-variations),
 [setup-node v6](https://github.com/actions/setup-node/tree/v6),
@@ -263,13 +267,13 @@ Record the release commit, OS, provider versions, session references, and
 observed results. Failures block release; do not repair state or weaken the
 skill contract to finish the smoke.
 
-## Local ntgrill validation — 2026-08-31
+## Initial local ntgrill validation — 2026-08-31
 
-The uncommitted follow-on worktree passed Windows verification: 207 tests
+Before the initial ntgrill commit, the worktree passed Windows verification: 207 tests
 passed, one platform skip, and packaging 5/5. This includes 12 E2E tests and
 six cross-provider conformance scenarios. The first green gate preceded live
-model calls; a later gate includes the review fixes. These results do not
-replace fresh Linux/macOS/Windows CI on a new commit.
+model calls; a later gate included the review fixes. The subsequent
+Linux/macOS/Windows CI result is recorded above.
 
 Native process/disk resume was exercised with Claude Code 2.1.220 / Claude
 Sonnet 5 and Codex 0.144.6 / gpt-5.6-sol on Node 24.15.0. New provider processes
@@ -296,8 +300,9 @@ invalid-phase diagnostic; its wording is now explicit in both skills.
 On the final package Codex emitted the required `invalid phase state` marker;
 Claude still omitted it despite loading the updated instruction. Its actual
 plan-ready/ntplan diagnosis and non-mutation were correct. The final live audit
-is **31/32**, not fully green: this model-compliance limitation remains open
-alongside the requirement for fresh CI before release.
+is **31/32**, not fully green: this model-compliance limitation remains open.
+The ntgrill CI requirement was satisfied on the commit recorded above;
+any later release candidate still requires CI on its own commit.
 
 Generated logs, assertions, release hashes and limitations are collected in
 `build/live-smoke-ntgrill/REPORT.md`, with original evidence retained in temporary

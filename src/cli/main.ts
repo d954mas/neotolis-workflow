@@ -13,12 +13,9 @@ import {
 } from '../core/protocol.ts';
 import type { NextAction, NextSkill } from '../core/protocol.ts';
 import type { State } from '../core/state.ts';
-import {
-  beginPhase,
-  completeNttaskPhase,
-  stopPhase,
-} from '../runtime/phase.ts';
+import { beginPhase, stopPhase } from '../runtime/phase.ts';
 import { completeNtgrillPhase } from '../runtime/ntgrill.ts';
+import { completeNttaskPhase } from '../runtime/nttask.ts';
 import { readPreflight } from '../runtime/preflight.ts';
 import { isGitProjectRoot, resolveProjectRoot } from '../runtime/project-root.ts';
 import { cancelRun, completeRun, startRun } from '../runtime/run.ts';

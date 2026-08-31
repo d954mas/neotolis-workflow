@@ -1007,30 +1007,6 @@ async function runStateTransaction(projectRoot, transition, options = {}) {
   return { state, warnings };
 }
 
-// src/runtime/nttask.ts
-async function completeNttaskPhase(projectRoot, input) {
-  validateSessionId(input.sessionId);
-  let runId;
-  return runStateTransaction(projectRoot, (state) => {
-    requireActivePhase(state, "phase complete nttask", "nttask");
-    requireOwner(state, input.sessionId);
-    runId = state.current.run_id;
-    return {
-      next_work_number: state.next_work_number,
-      current: {
-        run_id: runId,
-        lifecycle: "brief-ready",
-        phase: null,
-        owner: null,
-        blocker: null,
-        work: null
-      }
-    };
-  }, {
-    prepareCommit: () => validateNttaskBrief(projectRoot, runId)
-  });
-}
-
 // src/runtime/phase.ts
 var INTERRUPTION_AUTHORITIES = Object.freeze([
   "provider-ended",
@@ -1403,6 +1379,30 @@ async function completeNtgrillPhase(projectRoot, input, options = {}) {
   }, {
     ...options,
     prepareCommit: () => validateBrief(projectRoot, runId, "ntgrill")
+  });
+}
+
+// src/runtime/nttask.ts
+async function completeNttaskPhase(projectRoot, input) {
+  validateSessionId(input.sessionId);
+  let runId;
+  return runStateTransaction(projectRoot, (state) => {
+    requireActivePhase(state, "phase complete nttask", "nttask");
+    requireOwner(state, input.sessionId);
+    runId = state.current.run_id;
+    return {
+      next_work_number: state.next_work_number,
+      current: {
+        run_id: runId,
+        lifecycle: "brief-ready",
+        phase: null,
+        owner: null,
+        blocker: null,
+        work: null
+      }
+    };
+  }, {
+    prepareCommit: () => validateNttaskBrief(projectRoot, runId)
   });
 }
 

@@ -34,8 +34,6 @@ export interface StopPhaseInput {
   readonly interruption?: InterruptionAuthority;
 }
 
-export { completeNttaskPhase } from './nttask.ts';
-
 type ActivePhaseState = TransactionState & {
   readonly current: NonNullable<TransactionState['current']> & {
     readonly lifecycle: 'intake-active' | 'brief-ready';

@@ -14,7 +14,7 @@ import test from 'node:test';
 
 import { ERROR_CODES, WorkflowError } from '../../src/core/errors.ts';
 import type { State } from '../../src/core/state.ts';
-import { completeNttaskPhase } from '../../src/runtime/phase.ts';
+import { completeNttaskPhase } from '../../src/runtime/nttask.ts';
 
 const OWNER = 'codex:tb-07-primary';
 
