@@ -79,6 +79,8 @@ test('release artifacts contain exactly the approved inventories and no links', 
     'plugins/neotolis-workflow/hooks/hooks.json',
     'plugins/neotolis-workflow/runtime/ntworkflow.mjs',
     'plugins/neotolis-workflow/runtime/session-start.mjs',
+    'plugins/neotolis-workflow/skills/ntgrill/LICENSE',
+    'plugins/neotolis-workflow/skills/ntgrill/SKILL.md',
     'plugins/neotolis-workflow/skills/nttask/SKILL.md',
   ]);
   assert.deepEqual(filesUnder(CODEX_MARKETPLACE), [
@@ -87,6 +89,8 @@ test('release artifacts contain exactly the approved inventories and no links', 
     'plugins/neotolis-workflow/hooks/hooks.json',
     'plugins/neotolis-workflow/runtime/ntworkflow.mjs',
     'plugins/neotolis-workflow/runtime/session-start.mjs',
+    'plugins/neotolis-workflow/skills/ntgrill/LICENSE',
+    'plugins/neotolis-workflow/skills/ntgrill/SKILL.md',
     'plugins/neotolis-workflow/skills/nttask/SKILL.md',
   ]);
 });
@@ -194,7 +198,9 @@ test('pinned Claude installs the complete packaged marketplace fixture', () => {
       'hooks/hooks.json',
       'runtime/ntworkflow.mjs',
       'runtime/session-start.mjs',
-      'skills/nttask/SKILL.md',
+      'skills/ntgrill/LICENSE',
+    'skills/ntgrill/SKILL.md',
+    'skills/nttask/SKILL.md',
     ]);
   } finally {
     rmSync(root, { force: true, recursive: true });

@@ -1,6 +1,6 @@
 import { ERROR_CODES, WorkflowError } from '../core/errors.ts';
 import { isInterruptionAuthority } from '../runtime/phase.ts';
-import type { InterruptionAuthority } from '../runtime/phase.ts';
+import type { IntakePhase, InterruptionAuthority } from '../runtime/phase.ts';
 
 export interface StatusArguments {
   readonly cwd: string;
@@ -18,7 +18,7 @@ export interface RunArguments {
 interface PhaseArgumentsBase {
   readonly cwd: string;
   readonly command: 'phase';
-  readonly phase: 'nttask';
+  readonly phase: IntakePhase;
   readonly sessionId: string;
 }
 
@@ -30,6 +30,7 @@ export interface PhaseBeginArguments extends PhaseArgumentsBase {
 
 export interface PhaseCompleteArguments extends PhaseArgumentsBase {
   readonly operation: 'complete';
+  readonly userConfirmed?: true;
 }
 
 export interface PhaseStopArguments extends PhaseArgumentsBase {
@@ -106,25 +107,26 @@ function parseRunArguments(cwd: string, argv: readonly string[]): RunArguments {
   });
 }
 
-function phaseBase(cwd: string, sessionId: string): PhaseArgumentsBase {
-  return { cwd, command: 'phase', phase: 'nttask', sessionId };
+function phaseBase(cwd: string, sessionId: string, phase: IntakePhase): PhaseArgumentsBase {
+  return { cwd, command: 'phase', phase, sessionId };
 }
 
 function parsePhaseBegin(
   cwd: string,
   sessionId: string,
   options: readonly string[],
+  phase: IntakePhase,
 ): PhaseBeginArguments {
   if (options.length === 0) {
     return Object.freeze({
-      ...phaseBase(cwd, sessionId),
+      ...phaseBase(cwd, sessionId, phase),
       operation: 'begin',
       blockerResolved: false,
     });
   }
   if (options.length === 1 && options[0] === '--blocker-resolved') {
     return Object.freeze({
-      ...phaseBase(cwd, sessionId),
+      ...phaseBase(cwd, sessionId, phase),
       operation: 'begin',
       blockerResolved: true,
     });
@@ -135,7 +137,7 @@ function parsePhaseBegin(
     && (options.length === 2 || options[2] === '--blocker-resolved')
   ) {
     return Object.freeze({
-      ...phaseBase(cwd, sessionId),
+      ...phaseBase(cwd, sessionId, phase),
       operation: 'begin',
       interruption: parseInterruption(options[1]),
       blockerResolved: options.length === 3,
@@ -150,6 +152,7 @@ function parsePhaseStop(
   cwd: string,
   sessionId: string,
   options: readonly string[],
+  phase: IntakePhase,
 ): PhaseStopArguments {
   const blocker = options[1];
   if (options[0] !== '--blocker' || blocker === undefined || blocker.trim().length === 0) {
@@ -159,14 +162,14 @@ function parsePhaseStop(
   }
   if (options.length === 2) {
     return Object.freeze({
-      ...phaseBase(cwd, sessionId),
+      ...phaseBase(cwd, sessionId, phase),
       operation: 'stop',
       blocker,
     });
   }
   if (options.length === 4 && options[2] === '--interruption') {
     return Object.freeze({
-      ...phaseBase(cwd, sessionId),
+      ...phaseBase(cwd, sessionId, phase),
       operation: 'stop',
       blocker,
       interruption: parseInterruption(options[3]),
@@ -182,21 +185,28 @@ function parsePhaseArguments(cwd: string, argv: readonly string[]): PhaseArgumen
   if (operation !== 'begin' && operation !== 'complete' && operation !== 'stop') {
     invalidArguments('Unknown phase operation.', { operation: operation ?? '' });
   }
-  if (argv[4] !== 'nttask') {
+  if (argv[4] !== 'nttask' && argv[4] !== 'ntgrill') {
     invalidArguments('Unknown phase.', { phase: argv[4] ?? '' });
   }
 
+  const phase = argv[4];
   const sessionId = requireSessionId(argv);
   const options = argv.slice(7);
-  if (operation === 'begin') return parsePhaseBegin(cwd, sessionId, options);
-  if (operation === 'stop') return parsePhaseStop(cwd, sessionId, options);
+  if (operation === 'begin') return parsePhaseBegin(cwd, sessionId, options, phase);
+  if (operation === 'stop') return parsePhaseStop(cwd, sessionId, options, phase);
+  if (phase === 'ntgrill') {
+    if (options.length !== 1 || options[0] !== '--user-confirmed') {
+      invalidArguments('ntgrill completion requires --user-confirmed.', { argument: options[0] ?? '' });
+    }
+    return Object.freeze({ ...phaseBase(cwd, sessionId, phase), operation: 'complete', userConfirmed: true });
+  }
   if (options.length !== 0) {
     invalidArguments('The phase complete command accepts no extra arguments.', {
       argument: options[0] ?? '',
     });
   }
   return Object.freeze({
-    ...phaseBase(cwd, sessionId),
+    ...phaseBase(cwd, sessionId, phase),
     operation: 'complete',
   });
 }
@@ -214,9 +224,9 @@ export function operationForArguments(argv: readonly string[]): string {
   if (
     argv[2] === 'phase'
     && (argv[3] === 'begin' || argv[3] === 'complete' || argv[3] === 'stop')
-    && argv[4] === 'nttask'
+    && (argv[4] === 'nttask' || argv[4] === 'ntgrill')
   ) {
-    return `phase ${argv[3]} nttask`;
+    return `phase ${argv[3]} ${argv[4]}`;
   }
   return argv[2] ?? 'unknown';
 }

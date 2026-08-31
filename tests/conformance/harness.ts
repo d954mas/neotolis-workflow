@@ -52,11 +52,8 @@ export interface Corpus {
 }
 
 interface StepResult {
-  readonly operation: string;
   readonly exit_class: number;
-  readonly lifecycle: string | null;
-  readonly next_action: unknown;
-  readonly warnings: unknown;
+  readonly response: unknown;
   readonly filesystem_hashes: Readonly<Record<string, string>>;
 }
 
@@ -180,7 +177,8 @@ function commandArguments(arguments_: readonly string[], owner: string, otherOwn
 }
 
 function runScenario(corpusScenario: Scenario, adapter: Adapter): ScenarioResult {
-  const fixture = mkdtempSync(join(tmpdir(), `ntworkflow-conformance-${adapter.provider}-`));
+  // Match the CLI native realpath, including Windows 8.3 temporary paths.
+  const fixture = realpathSync.native(mkdtempSync(join(tmpdir(), `ntworkflow-conformance-${adapter.provider}-`)));
   try {
     if (corpusScenario.git) mkdirSync(join(fixture, '.git'));
     for (const seed of corpusScenario.seed ?? []) {
@@ -214,18 +212,12 @@ function runScenario(corpusScenario: Scenario, adapter: Adapter): ScenarioResult
         ],
         { encoding: 'utf8' },
       );
-      const response = JSON.parse(command.stdout) as {
-        operation: string;
-        state: { current: null | { lifecycle: string } } | null;
-        next_action: unknown;
-        warnings: unknown;
-      };
+      assert.equal(command.stderr, '');
+      assert.equal(command.stdout.trim().split('\n').length, 1);
+      const response = JSON.parse(command.stdout) as unknown;
       results.push({
-        operation: response.operation,
         exit_class: command.status ?? 70,
-        lifecycle: response.state?.current?.lifecycle ?? null,
-        next_action: normalize(response.next_action, fixture, context.owner, otherOwner),
-        warnings: normalize(response.warnings, fixture, context.owner, otherOwner),
+        response: normalize(response, fixture, context.owner, otherOwner),
         filesystem_hashes: filesystemHashes(fixture, context.owner, otherOwner),
       });
     }

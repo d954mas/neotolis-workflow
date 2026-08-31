@@ -116,7 +116,9 @@ test('pinned Claude CLI validates, installs, lists, and discovers the staged plu
       'hooks/hooks.json',
       'runtime/ntworkflow.mjs',
       'runtime/session-start.mjs',
-      'skills/nttask/SKILL.md',
+      'skills/ntgrill/LICENSE',
+    'skills/ntgrill/SKILL.md',
+    'skills/nttask/SKILL.md',
     ]);
 
     const details = runClaude(
@@ -124,7 +126,7 @@ test('pinned Claude CLI validates, installs, lists, and discovers the staged plu
       'plugin', 'details', 'neotolis-workflow@neotolis-local',
     );
     expectSuccess(details);
-    assert.match(details.stdout, /Skills \(1\)\s+nttask/);
+    assert.match(details.stdout, /Skills \(2\)\s+ntgrill, nttask/);
     assert.match(details.stdout, /Agents \(0\)/);
     assert.match(details.stdout, /Hooks \(1\)\s+SessionStart/);
     assert.match(details.stdout, /MCP servers \(0\)/);

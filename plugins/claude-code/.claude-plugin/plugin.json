@@ -1,7 +1,7 @@
 {
   "name": "neotolis-workflow",
   "version": "0.0.0",
-  "description": "Rigorous task intake for Neotolis Workflow.",
+  "description": "Rigorous task intake and decision grilling for Neotolis Workflow.",
   "author": {
     "name": "Neotolis"
   }

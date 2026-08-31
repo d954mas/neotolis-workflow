@@ -2,8 +2,12 @@
 
 ## Status
 
-Contract design is confirmed. Tracer-bullet implementation is complete through
-TB-07; TB-08 is next. The full six-skill workflow is not yet implemented.
+Contract design is confirmed. The first tracer bullet, TB-01–TB-11, is complete
+at `3db1f4c5e66b02aa1bfd65cf07d7bf84545e786d`. The separate ntgrill slice is implemented:
+`ntgrill`: `brief-ready` → confirmed shared understanding → rewritten BRIEF →
+`plan-ready`. Its bounded plan is [implementation/NTGRILL.md](implementation/NTGRILL.md).
+`ntplan`, `ntwork`, telemetry, `ntstats`, and `ntreflect` are not implemented.
+The full six-skill workflow is not complete. New changes require fresh CI.
 
 ## Goal
 
@@ -98,10 +102,11 @@ GSD while retaining:
 - independent specification and code-quality review;
 - exact, local operational telemetry where the provider exposes it.
 
-## Installation (tracer bullet)
+## Installation
 
-The packaged slice exposes only `nttask`; the other five skills and supporting
-roles are not implemented. Use Node.js 24 and Git. Verification pins Claude Code
+The packaged slice exposes `nttask` and `ntgrill`; the other four skills and
+supporting roles are not implemented. `ntgrill` uses only its primary agent.
+Use Node.js 24 and Git. Verification pins Claude Code
 2.1.220 and Codex CLI 0.144.6 through `package-lock.json`; do not replace them with
 an unpinned download during a test run.
 
@@ -159,7 +164,7 @@ The deterministic installation fixtures exercise the exact pinned CLI commands.
 1. `npm run check`: TypeScript checking and ESLint.
 2. `npm run build`: compile the dependency-free CLI.
 3. `npm --offline test`: all `tests/**/*.test.ts`, including tooling, state,
-   status, transaction, run, phase, nttask, clean native provider installation
+   status, transaction, run, phase, nttask, ntgrill, clean native provider installation
    and discovery fixtures, conformance, and E2E.
 4. `npm --offline run package`: rebuild and package both complete marketplaces
    and the npm tarball.
@@ -186,7 +191,12 @@ Coverage includes empty intake, first start, native ownership, Unicode BRIEF
 with a URL, completion and owner release, fresh read-only re-entry to `ntgrill`,
 competing owners, confirmed cross-provider takeover, cancellation and permanent
 run retention, corruption, invalid BRIEF, held locks, partial directories, and
-delivery-ready replacement. Commit-boundary checks additionally reuse the
+delivery-ready replacement. Grilling coverage includes begin/stop/complete,
+ownership, same-session restart, cross-provider takeover, explicit completion
+confirmation, missing/invalid BRIEF, rejection of any Open questions section,
+blockers, failed state replacement, and later-state diagnosis. The conformance
+corpus compares complete JSON responses, including every error field.
+Commit-boundary checks additionally reuse the
 existing runtime fault-injection seam to prove that the old state remains until
 replacement and survives a failed commit; these checks do not add CLI options.
 
@@ -202,10 +212,18 @@ CI disables Git line-ending conversion before checkout, so Windows retains the
 same tracked bytes ([Git core.autocrlf](https://git-scm.com/docs/git-config#Documentation/git-config.txt-coreautocrlf)).
 CI runs the same `npm ci` and `npm run verify` gate on `windows-latest`,
 `ubuntu-latest`, and `macos-latest`, each with Node.js 24. Matrix jobs do not
-cancel one another on failure. **TB-AC-11 remains pending until all three jobs
-pass on one commit.** A local Windows pass is not three-platform CI evidence.
-Record the commit and job URLs when that gate runs; changes after it need fresh
-evidence.
+cancel one another on failure. **TB-AC-11 passed on the tracer commit above**:
+[Windows](https://github.com/d954mas/neotolis-workflow/actions/runs/33370135714/job/99419111324)
+(188 passed, 1 platform skip),
+[Ubuntu](https://github.com/d954mas/neotolis-workflow/actions/runs/33370135714/job/99419111676)
+and [macOS](https://github.com/d954mas/neotolis-workflow/actions/runs/33370135714/job/99419111512)
+(189 passed each). Packaging was 5/5 per job; E2E was 10/10.
+Those tracer jobs do not cover ntgrill. The separate ntgrill slice passed
+[CI run 33386366276](https://github.com/d954mas/neotolis-workflow/actions/runs/33386366276)
+on commit `02ec60bb2f4b2e8f0edb9b965e08e37f9fafb7ae`: Windows had 207 passed
+and one platform skip; Ubuntu and macOS had 208 passed each. Packaging was
+5/5 on every platform. This is commit-specific evidence; subsequent changes
+require their own CI run.
 
 CI references: [GitHub matrix jobs](https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/run-job-variations),
 [setup-node v6](https://github.com/actions/setup-node/tree/v6),
@@ -213,8 +231,9 @@ CI references: [GitHub matrix jobs](https://docs.github.com/en/actions/how-tos/w
 
 ## Release-only live smoke
 
-Run this separately after deterministic CI passes on the release commit, with
-explicit authorization for live model use. It is not part of `verify` or CI.
+Run this separately after the local deterministic gate, with explicit
+authorization for live model use. It is not part of `verify` or CI. Publishing
+still requires fresh three-platform CI on the release commit.
 
 1. Install each packaged plugin at user scope and use a separate disposable
    consumer Git repository per provider. Authenticate through the provider's
@@ -226,11 +245,90 @@ explicit authorization for live model use. It is not part of `verify` or CI.
    relevant repository scouting and questions, and a concise current BRIEF.
    Confirm `brief-ready`, no owner, and no edits outside `.ntworkflow/`.
 4. In a fresh session, invoke `nttask` again. Confirm no mutation and a handoff
-   to `ntgrill`; do not attempt to execute the unimplemented phase.
+   to `ntgrill`. In a fresh primary session invoke `ntgrill`, confirm one
+   recommended decision at a time, correct the proposed complete understanding,
+   and verify that the brief remains unchanged until the revised account is
+   explicitly confirmed. Then check plan-ready, a full current BRIEF without
+   Open questions, no project-code edits, and read-only late ntgrill rejection
+   naming ntplan. Do not attempt the unimplemented planning phase.
 5. In another disposable run, verify that a competing session stops, an
    explicitly confirmed interruption allows cross-provider takeover, and
    explicit cancellation preserves the run directory and partial BRIEF.
+6. Start intake in a durable native session, end the provider process, start a
+   new process, and resume that exact session from disk. Verify unchanged
+   identity, valid SessionStart context, and preserved consumer files. Native
+   resume does not authorize workflow reasoning to resume: interrupted intake
+   and grilling require explicit restart confirmation even for the same ID.
+   Confirm restart and verify phase begin includes interruption authority when
+   an owner remains recorded. A fresh session is not disk-resume evidence;
+   neither test establishes an operating-system reboot.
 
 Record the release commit, OS, provider versions, session references, and
 observed results. Failures block release; do not repair state or weaken the
 skill contract to finish the smoke.
+
+## Initial local ntgrill validation — 2026-08-31
+
+Before the initial ntgrill commit, the worktree passed Windows verification: 207 tests
+passed, one platform skip, and packaging 5/5. This includes 12 E2E tests and
+six cross-provider conformance scenarios. The first green gate preceded live
+model calls; a later gate included the review fixes. The subsequent
+Linux/macOS/Windows CI result is recorded above.
+
+Native process/disk resume was exercised with Claude Code 2.1.220 / Claude
+Sonnet 5 and Codex 0.144.6 / gpt-5.6-sol on Node 24.15.0. New provider processes
+loaded the same saved session identities and supplied valid SessionStart
+context. State and files remained unchanged before explicit restart confirmation.
+The smoke exposed a missing same-owner interruption instruction in nttask;
+both skills now pass the existing runtime's interruption authority after
+confirmation. Runtime restart semantics were not relaxed.
+
+Both real models completed ntgrill from the same explicitly seeded intake
+brief: repository scouting, a recommended format question, dependent CSV
+choices, correction of the complete understanding from CRLF to LF, renewed
+confirmation, full BRIEF rewrite, and plan-ready with no owner. During the
+interview and correction the BRIEF stayed byte-identical; only BRIEF and state
+changed overall. Full normalized CLI responses agree. The final native BRIEFs
+have different prose; evidence retains that difference instead of normalizing
+it away. Deterministic E2E uses an explicit approved rewrite, not model output.
+
+Three read-only reviewers found the same ordering defect: freshness stopped a
+late invocation before status/next_action diagnosis. Moving diagnosis ahead of
+freshness/restart fixed it; all three rechecked the change without further
+findings. Late live calls then exposed omission of the contract's literal
+invalid-phase diagnostic; its wording is now explicit in both skills.
+On the final package Codex emitted the required `invalid phase state` marker;
+Claude still omitted it despite loading the updated instruction. Its actual
+plan-ready/ntplan diagnosis and non-mutation were correct. The final live audit
+is **31/32**, not fully green: this model-compliance limitation remains open.
+The ntgrill CI requirement was satisfied on the commit recorded above;
+any later release candidate still requires CI on its own commit.
+
+Generated logs, assertions, release hashes and limitations are collected in
+`build/live-smoke-ntgrill/REPORT.md`, with original evidence retained in temporary
+fixtures outside build. Initial failed attempts remain recorded: unsupported
+model-invented CLI flags, a Claude retry after a runtime error, and omitted late
+diagnostic labels are not claimed as passing evidence. Model compliance remains
+nondeterministic. This tests process restart, not an OS reboot. Headless native
+flows were used; the interactive Codex /hooks screen was not tested. Hook trust
+used native hooks/list and config/batchWrite only after installed release-byte
+and currentHash verification. No credentials were copied into fixtures.
+
+## ntgrill contract and provenance
+
+The primary discovers repository facts, asks one material decision question
+with a recommendation at a time, follows dependent branches and performs a
+final self-sweep. The user confirms the complete understanding; corrections
+reopen affected branches. BRIEF stays unchanged during the interview and is
+fully rewritten only after that confirmation. No frontier files, scores,
+supporting reviewers or automatic phase chaining are added.
+
+Both self-contained skills adapt Matt Pocock's
+[grilling source](https://github.com/mattpocock/skills/blob/6654f6b60cd9d5be8b54c6fafe44346dabeb3b76/skills/productivity/grilling/SKILL.md)
+and [documentation](https://github.com/mattpocock/skills/blob/6654f6b60cd9d5be8b54c6fafe44346dabeb3b76/docs/productivity/grilling.md),
+pinned to `6654f6b60cd9d5be8b54c6fafe44346dabeb3b76`, with the full
+[MIT notice](https://github.com/mattpocock/skills/blob/6654f6b60cd9d5be8b54c6fafe44346dabeb3b76/LICENSE)
+included in each plugin. Neotolis explicitly replaces upstream question rounds
+with one question and subagent exploration with primary exploration, per its
+confirmed phase contract. Runtime checks structure and confirmation input;
+the skill owns semantic completeness and truthful user confirmation.

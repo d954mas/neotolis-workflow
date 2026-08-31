@@ -385,16 +385,144 @@ function validateStateInvariants(state) {
   if (current.work !== null) validateWork(current, current.work);
 }
 
+// src/runtime/artifacts.ts
+import { lstat, readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { TextDecoder as TextDecoder2 } from "node:util";
+var REQUIRED_SECTIONS = [
+  "Brief",
+  "Repository context",
+  "Success"
+];
+var OPTIONAL_SECTION = "Open questions";
+function artifactFailure(path, reason, phase) {
+  throw new WorkflowError({
+    code: ERROR_CODES.ARTIFACT_FAILURE,
+    message: `BRIEF.md does not satisfy the ${phase} artifact contract.`,
+    details: { path, reason }
+  });
+}
+function parseBrief(markdown) {
+  const result = [];
+  const lines = markdown.split(/\r?\n/u);
+  let htmlComment = false;
+  let fence = null;
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index] ?? "";
+    if (fence !== null) {
+      const closingMatch = /^ {0,3}(`+|~+)[ \t]*$/u.exec(line);
+      const closingMarker = closingMatch?.[1];
+      if (closingMarker?.[0] === fence.character && closingMarker.length >= fence.length) {
+        fence = null;
+      }
+      continue;
+    }
+    if (htmlComment || /^ {0,3}<!--/u.test(line)) {
+      lines[index] = line.replace(/(?:^|<!--).*?(-->|$)/gu, (_comment, ending) => {
+        htmlComment = ending !== "-->";
+        return "";
+      });
+      continue;
+    }
+    const openingMatch = /^ {0,3}(`{3,}|~{3,})(.*)$/u.exec(line);
+    if (openingMatch !== null) {
+      const marker = openingMatch[1] ?? "";
+      const info = openingMatch[2] ?? "";
+      if (marker[0] !== "`" || !info.includes("`")) {
+        fence = { character: marker[0], length: marker.length };
+        continue;
+      }
+    }
+    const match = /^ {0,3}(#{1,2})(?:[ \t]+|$)(.*)$/u.exec(line);
+    if (match === null) continue;
+    const rawText = (match[2] ?? "").replace(/(?:^|[ \t]+)#+[ \t]*$/u, "");
+    result.push({
+      level: match[1]?.length === 1 ? 1 : 2,
+      text: rawText.trim(),
+      line: index
+    });
+  }
+  return { headings: result, lines };
+}
+function validateBriefStructure(markdown, path, phase) {
+  const { headings: parsedHeadings, lines } = parseBrief(markdown);
+  const titles = parsedHeadings.filter((heading) => heading.level === 1);
+  const title = titles[0];
+  if (titles.length !== 1 || title === void 0 || title.text.length === 0) {
+    artifactFailure(path, "exactly one non-empty H1 is required", phase);
+  }
+  const sections = parsedHeadings.filter((heading) => heading.level === 2);
+  const firstSection = sections[0];
+  if (firstSection !== void 0 && title.line > firstSection.line) {
+    artifactFailure(path, "the H1 must appear before all H2 sections", phase);
+  }
+  const sectionNames = sections.map((section) => section.text);
+  if (phase === "ntgrill" && sectionNames.includes(OPTIONAL_SECTION)) {
+    throw new WorkflowError({
+      code: ERROR_CODES.ARTIFACT_FAILURE,
+      message: "BRIEF.md does not satisfy the ntgrill artifact contract.",
+      details: { path, reason: "Open questions must be absent after shared understanding is confirmed" }
+    });
+  }
+  const expected = sectionNames.length === REQUIRED_SECTIONS.length ? REQUIRED_SECTIONS : [...REQUIRED_SECTIONS, OPTIONAL_SECTION];
+  if (sectionNames.length !== expected.length || !sectionNames.every((name, index) => name === expected[index])) {
+    artifactFailure(
+      path,
+      phase === "nttask" ? "required H2 sections must appear once in order; only a final Open questions section is optional" : "required H2 sections must appear once in order; no additional sections are allowed",
+      phase
+    );
+  }
+  for (const [index, section] of sections.entries()) {
+    const nextLine = sections[index + 1]?.line ?? lines.length;
+    const content = lines.slice(section.line + 1, nextLine).join("\n").trim();
+    if (content.length === 0) {
+      artifactFailure(path, `section ${section.text} must be non-empty`, phase);
+    }
+  }
+}
+async function validateBrief(projectRoot, runId, phase) {
+  const runsPath = join(projectRoot, ".ntworkflow", "runs");
+  const runPath = join(runsPath, runId);
+  const path = join(runPath, "BRIEF.md");
+  try {
+    const runs = await lstat(runsPath);
+    const run = await lstat(runPath);
+    const brief = await lstat(path);
+    if (!runs.isDirectory() || !run.isDirectory() || !brief.isFile()) {
+      artifactFailure(path, "BRIEF.md must be a regular file in the current run directory", phase);
+    }
+  } catch (error) {
+    if (error instanceof WorkflowError) throw error;
+    artifactFailure(path, "BRIEF.md is missing or unreadable", phase);
+  }
+  let bytes;
+  try {
+    bytes = await readFile(path);
+  } catch {
+    artifactFailure(path, "BRIEF.md is missing or unreadable", phase);
+  }
+  let markdown;
+  try {
+    markdown = new TextDecoder2("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    artifactFailure(path, "BRIEF.md must contain valid UTF-8", phase);
+  }
+  validateBriefStructure(markdown, path, phase);
+}
+function validateNttaskBrief(projectRoot, runId) {
+  return validateBrief(projectRoot, runId, "nttask");
+}
+
 // src/runtime/transaction.ts
 import { randomUUID } from "node:crypto";
 import {
-  lstat as lstat3,
+  lstat as lstat4,
   open,
   rename,
   link,
   unlink
 } from "node:fs/promises";
-import { join as join3 } from "node:path";
+import { join as join4 } from "node:path";
 
 // src/core/state.ts
 function field(record, key) {
@@ -575,13 +703,13 @@ function parseState(value) {
 }
 
 // src/runtime/preflight.ts
-import { lstat as lstat2, readFile as readFile2 } from "node:fs/promises";
-import { join as join2 } from "node:path";
+import { lstat as lstat3, readFile as readFile3 } from "node:fs/promises";
+import { join as join3 } from "node:path";
 
 // src/runtime/project-root.ts
 import { constants } from "node:fs";
-import { access, lstat, readFile, realpath, stat } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { access, lstat as lstat2, readFile as readFile2, realpath, stat } from "node:fs/promises";
+import { dirname, join as join2, resolve } from "node:path";
 function invalidCwd(cwd) {
   return new WorkflowError({
     code: ERROR_CODES.INVALID_INPUT,
@@ -603,13 +731,13 @@ async function canonicalizeCwd(cwd) {
   }
 }
 async function isGitProjectRoot(directory) {
-  const markerPath = join(directory, ".git");
+  const markerPath = join2(directory, ".git");
   try {
-    const marker = await lstat(markerPath);
+    const marker = await lstat2(markerPath);
     if (marker.isDirectory()) return true;
     if (!marker.isFile()) return false;
     try {
-      const source = await readFile(markerPath, "utf8");
+      const source = await readFile2(markerPath, "utf8");
       return /^gitdir: .+(?:\r?\n)?$/u.test(source);
     } catch {
       throw new WorkflowError({
@@ -648,10 +776,10 @@ function invalidState(rule) {
   });
 }
 async function readProjectState(projectRoot) {
-  const workflowPath = join2(projectRoot, ".ntworkflow");
+  const workflowPath = join3(projectRoot, ".ntworkflow");
   let workflowMetadata;
   try {
-    workflowMetadata = await lstat2(workflowPath);
+    workflowMetadata = await lstat3(workflowPath);
   } catch (error) {
     if (hasErrorCode(error, "ENOENT")) return null;
     throw invalidState("readable workflow directory");
@@ -659,10 +787,10 @@ async function readProjectState(projectRoot) {
   if (!workflowMetadata.isDirectory()) {
     throw invalidState("workflow directory");
   }
-  const statePath = join2(workflowPath, "state.json");
+  const statePath = join3(workflowPath, "state.json");
   let metadata;
   try {
-    metadata = await lstat2(statePath);
+    metadata = await lstat3(statePath);
   } catch (error) {
     if (hasErrorCode(error, "ENOENT")) return null;
     throw invalidState("readable regular UTF-8 JSON file");
@@ -672,7 +800,7 @@ async function readProjectState(projectRoot) {
   }
   let source;
   try {
-    const bytes = await readFile2(statePath);
+    const bytes = await readFile3(statePath);
     source = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
   } catch {
     throw invalidState("readable regular UTF-8 JSON file");
@@ -750,7 +878,7 @@ async function releaseOwnedLock(lock) {
 }
 async function assertWorkflowDirectory(workflowPath) {
   try {
-    if (!(await lstat3(workflowPath)).isDirectory()) {
+    if (!(await lstat4(workflowPath)).isDirectory()) {
       throw commitFailure("workflow-directory", workflowPath);
     }
   } catch (error) {
@@ -766,11 +894,11 @@ async function assertWorkflowDirectory(workflowPath) {
   }
 }
 async function acquireLock(workflowPath) {
-  const lockPath = join3(workflowPath, ".state.lock");
+  const lockPath = join4(workflowPath, ".state.lock");
   const token = randomUUID();
   const lock = {
     path: lockPath,
-    releasePath: join3(workflowPath, `.state.lock.${token}.release`),
+    releasePath: join4(workflowPath, `.state.lock.${token}.release`),
     token
   };
   let handle;
@@ -823,8 +951,8 @@ async function syncParentDirectory(workflowPath) {
   return warning;
 }
 async function commitState(workflowPath, serializedState, lockToken, faultInjector) {
-  const statePath = join3(workflowPath, "state.json");
-  const temporaryPath = join3(workflowPath, `.state.${lockToken}.tmp`);
+  const statePath = join4(workflowPath, "state.json");
+  const temporaryPath = join4(workflowPath, `.state.${lockToken}.tmp`);
   let handle = null;
   let renamed = false;
   try {
@@ -853,7 +981,7 @@ async function commitState(workflowPath, serializedState, lockToken, faultInject
   }
 }
 async function runStateTransaction(projectRoot, transition, options = {}) {
-  const workflowPath = join3(projectRoot, ".ntworkflow");
+  const workflowPath = join4(projectRoot, ".ntworkflow");
   await assertWorkflowDirectory(workflowPath);
   const lock = await acquireLock(workflowPath);
   let state;
@@ -877,187 +1005,6 @@ async function runStateTransaction(projectRoot, transition, options = {}) {
   }
   if (!await releaseOwnedLock(lock)) warnings.push(LOCK_RELEASE_WARNING);
   return { state, warnings };
-}
-
-// src/runtime/artifacts.ts
-import { lstat as lstat4, readFile as readFile3 } from "node:fs/promises";
-import { join as join4 } from "node:path";
-import { TextDecoder as TextDecoder2 } from "node:util";
-var REQUIRED_SECTIONS = [
-  "Brief",
-  "Repository context",
-  "Success"
-];
-var OPTIONAL_SECTION = "Open questions";
-function artifactFailure(path, reason) {
-  throw new WorkflowError({
-    code: ERROR_CODES.ARTIFACT_FAILURE,
-    message: "BRIEF.md does not satisfy the nttask artifact contract.",
-    details: { path, reason }
-  });
-}
-function parseBrief(markdown) {
-  const result = [];
-  const lines = markdown.split(/\r?\n/u);
-  let htmlComment = false;
-  let fence = null;
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index] ?? "";
-    if (fence !== null) {
-      const closingMatch = /^ {0,3}(`+|~+)[ \t]*$/u.exec(line);
-      const closingMarker = closingMatch?.[1];
-      if (closingMarker?.[0] === fence.character && closingMarker.length >= fence.length) {
-        fence = null;
-      }
-      continue;
-    }
-    if (htmlComment || /^ {0,3}<!--/u.test(line)) {
-      lines[index] = line.replace(/(?:^|<!--).*?(-->|$)/gu, (_comment, ending) => {
-        htmlComment = ending !== "-->";
-        return "";
-      });
-      continue;
-    }
-    const openingMatch = /^ {0,3}(`{3,}|~{3,})(.*)$/u.exec(line);
-    if (openingMatch !== null) {
-      const marker = openingMatch[1] ?? "";
-      const info = openingMatch[2] ?? "";
-      if (marker[0] !== "`" || !info.includes("`")) {
-        fence = { character: marker[0], length: marker.length };
-        continue;
-      }
-    }
-    const match = /^ {0,3}(#{1,2})(?:[ \t]+|$)(.*)$/u.exec(line);
-    if (match === null) continue;
-    const rawText = (match[2] ?? "").replace(/(?:^|[ \t]+)#+[ \t]*$/u, "");
-    result.push({
-      level: match[1]?.length === 1 ? 1 : 2,
-      text: rawText.trim(),
-      line: index
-    });
-  }
-  return { headings: result, lines };
-}
-function validateBriefStructure(markdown, path) {
-  const { headings: parsedHeadings, lines } = parseBrief(markdown);
-  const titles = parsedHeadings.filter((heading) => heading.level === 1);
-  const title = titles[0];
-  if (titles.length !== 1 || title === void 0 || title.text.length === 0) {
-    artifactFailure(path, "exactly one non-empty H1 is required");
-  }
-  const sections = parsedHeadings.filter((heading) => heading.level === 2);
-  const firstSection = sections[0];
-  if (firstSection !== void 0 && title.line > firstSection.line) {
-    artifactFailure(path, "the H1 must appear before all H2 sections");
-  }
-  const sectionNames = sections.map((section) => section.text);
-  const expected = sectionNames.length === REQUIRED_SECTIONS.length ? REQUIRED_SECTIONS : [...REQUIRED_SECTIONS, OPTIONAL_SECTION];
-  if (sectionNames.length !== expected.length || !sectionNames.every((name, index) => name === expected[index])) {
-    artifactFailure(
-      path,
-      "required H2 sections must appear once in order; only a final Open questions section is optional"
-    );
-  }
-  for (const [index, section] of sections.entries()) {
-    const nextLine = sections[index + 1]?.line ?? lines.length;
-    const content = lines.slice(section.line + 1, nextLine).join("\n").trim();
-    if (content.length === 0) {
-      artifactFailure(path, `section ${section.text} must be non-empty`);
-    }
-  }
-}
-async function validateNttaskBrief(projectRoot, runId) {
-  const runsPath = join4(projectRoot, ".ntworkflow", "runs");
-  const runPath = join4(runsPath, runId);
-  const path = join4(runPath, "BRIEF.md");
-  try {
-    const runs = await lstat4(runsPath);
-    const run = await lstat4(runPath);
-    const brief = await lstat4(path);
-    if (!runs.isDirectory() || !run.isDirectory() || !brief.isFile()) {
-      artifactFailure(path, "BRIEF.md must be a regular file in the current run directory");
-    }
-  } catch (error) {
-    if (error instanceof WorkflowError) throw error;
-    artifactFailure(path, "BRIEF.md is missing or unreadable");
-  }
-  let bytes;
-  try {
-    bytes = await readFile3(path);
-  } catch {
-    artifactFailure(path, "BRIEF.md is missing or unreadable");
-  }
-  let markdown;
-  try {
-    markdown = new TextDecoder2("utf-8", { fatal: true }).decode(bytes);
-  } catch {
-    artifactFailure(path, "BRIEF.md must contain valid UTF-8");
-  }
-  validateBriefStructure(markdown, path);
-}
-
-// src/runtime/nttask.ts
-function validateNttaskSessionId(sessionId) {
-  if (providerForSessionId(sessionId) === null) {
-    throw new WorkflowError({
-      code: ERROR_CODES.INVALID_INPUT,
-      message: "A canonical provider session ID is required.",
-      details: { argument: "--session-id", expected: SESSION_ID_FORMAT }
-    });
-  }
-}
-function ownershipConflict(recordedOwner, requestedOwner) {
-  throw new WorkflowError({
-    code: ERROR_CODES.OWNERSHIP_CONFLICT,
-    message: "An nttask owner is already recorded.",
-    details: {
-      recorded_owner: recordedOwner,
-      requested_owner: requestedOwner
-    }
-  });
-}
-function requireNttaskCompletionAuthority(state, input) {
-  if (state?.current?.lifecycle !== "intake-active" || state.current.phase !== "nttask" || state.current.owner === null) {
-    throw new WorkflowError({
-      code: ERROR_CODES.ILLEGAL_TRANSITION,
-      message: "phase complete nttask requires an active nttask phase.",
-      details: {
-        actual_lifecycle: state?.current?.lifecycle ?? null,
-        actual_phase: state?.current?.phase ?? null
-      }
-    });
-  }
-  if (state.current.owner.session_id !== input.sessionId) {
-    ownershipConflict(state.current.owner.session_id, input.sessionId);
-  }
-}
-function completedState(state) {
-  return {
-    next_work_number: state.next_work_number,
-    current: {
-      run_id: state.current.run_id,
-      lifecycle: "brief-ready",
-      phase: null,
-      owner: null,
-      blocker: null,
-      work: null
-    }
-  };
-}
-async function completeNttaskPhase(projectRoot, input) {
-  validateNttaskSessionId(input.sessionId);
-  let runId;
-  return runStateTransaction(
-    projectRoot,
-    (state) => {
-      requireNttaskCompletionAuthority(state, input);
-      runId = state.current.run_id;
-      return completedState(state);
-    },
-    {
-      prepareCommit: () => validateNttaskBrief(projectRoot, runId)
-    }
-  );
 }
 
 // src/runtime/phase.ts
@@ -1108,28 +1055,28 @@ function illegalTransition(operation, state) {
     }
   });
 }
-function ownershipConflict2(recordedOwner, requestedOwner) {
+function ownershipConflict(recordedOwner, requestedOwner, phase) {
   throw new WorkflowError({
     code: ERROR_CODES.OWNERSHIP_CONFLICT,
-    message: "An nttask owner is already recorded.",
+    message: `An ${phase} owner is already recorded.`,
     details: {
       recorded_owner: recordedOwner,
       requested_owner: requestedOwner
     }
   });
 }
-function unresolvedBlocker(blocker) {
+function unresolvedBlocker(blocker, phase) {
   throw new WorkflowError({
     code: ERROR_CODES.UNRESOLVED_BLOCKER,
-    message: "The recorded blocker must be explicitly resolved before nttask begins.",
+    message: `The recorded blocker must be explicitly resolved before ${phase} begins.`,
     details: { blocker }
   });
 }
-function requireActiveNttask(state, operation) {
-  if (state?.current?.lifecycle !== "intake-active" || state.current.phase !== "nttask" || state.current.owner === null) {
+function requireActivePhase(state, operation, phase) {
+  if (state?.current?.lifecycle !== (phase === "nttask" ? "intake-active" : "brief-ready") || state.current.phase !== phase || state.current.owner === null) {
     throw new WorkflowError({
       code: ERROR_CODES.ILLEGAL_TRANSITION,
-      message: `${operation} requires an active nttask phase.`,
+      message: `${operation} requires an active ${phase} phase.`,
       details: {
         actual_lifecycle: state?.current?.lifecycle ?? null,
         actual_phase: state?.current?.phase ?? null
@@ -1139,39 +1086,39 @@ function requireActiveNttask(state, operation) {
 }
 function requireOwner(state, sessionId, interruption) {
   if (state.current.owner.session_id !== sessionId && interruption === void 0) {
-    ownershipConflict2(state.current.owner.session_id, sessionId);
+    ownershipConflict(state.current.owner.session_id, sessionId, state.current.phase);
   }
 }
-function beginTransition(state, input) {
-  if (state?.current?.lifecycle !== "intake-active") {
-    illegalTransition("phase begin nttask", state);
+function beginTransition(state, input, phase) {
+  if (state?.current?.lifecycle !== (phase === "nttask" ? "intake-active" : "brief-ready")) {
+    illegalTransition(`phase begin ${phase}`, state);
   }
   if (state.current.blocker !== null && input.blockerResolved !== true) {
-    unresolvedBlocker(state.current.blocker);
+    unresolvedBlocker(state.current.blocker, phase);
   }
   if (state.current.owner !== null && input.interruption === void 0) {
-    ownershipConflict2(state.current.owner.session_id, input.sessionId);
+    ownershipConflict(state.current.owner.session_id, input.sessionId, phase);
   }
   return {
     next_work_number: state.next_work_number,
     current: {
       run_id: state.current.run_id,
-      lifecycle: "intake-active",
-      phase: "nttask",
+      lifecycle: state.current.lifecycle,
+      phase,
       owner: { session_id: input.sessionId },
       blocker: null,
       work: null
     }
   };
 }
-function stopTransition(state, input) {
-  requireActiveNttask(state, "phase stop nttask");
+function stopTransition(state, input, phase) {
+  requireActivePhase(state, `phase stop ${phase}`, phase);
   requireOwner(state, input.sessionId, input.interruption);
   return {
     next_work_number: state.next_work_number,
     current: {
       run_id: state.current.run_id,
-      lifecycle: "intake-active",
+      lifecycle: state.current.lifecycle,
       phase: null,
       owner: null,
       blocker: input.blocker,
@@ -1179,16 +1126,25 @@ function stopTransition(state, input) {
     }
   };
 }
-async function beginNttaskPhase(projectRoot, input) {
+async function beginPhase(projectRoot, phase, input) {
   validateSessionId(input.sessionId);
   validateInterruption(input.interruption);
-  return runStateTransaction(projectRoot, (state) => beginTransition(state, input));
+  let runId;
+  return runStateTransaction(projectRoot, (state) => {
+    const next = beginTransition(state, input, phase);
+    runId = next.current.run_id;
+    return next;
+  }, {
+    ...phase === "ntgrill" ? {
+      prepareCommit: () => validateNttaskBrief(projectRoot, runId)
+    } : {}
+  });
 }
-async function stopNttaskPhase(projectRoot, input) {
+async function stopPhase(projectRoot, phase, input) {
   validateSessionId(input.sessionId);
   validateInterruption(input.interruption);
   requireBlocker(input.blocker);
-  return runStateTransaction(projectRoot, (state) => stopTransition(state, input));
+  return runStateTransaction(projectRoot, (state) => stopTransition(state, input, phase));
 }
 
 // src/cli/arguments.ts
@@ -1245,27 +1201,27 @@ function parseRunArguments(cwd, argv) {
     userConfirmed: needsConfirmation
   });
 }
-function phaseBase(cwd, sessionId) {
-  return { cwd, command: "phase", phase: "nttask", sessionId };
+function phaseBase(cwd, sessionId, phase) {
+  return { cwd, command: "phase", phase, sessionId };
 }
-function parsePhaseBegin(cwd, sessionId, options) {
+function parsePhaseBegin(cwd, sessionId, options, phase) {
   if (options.length === 0) {
     return Object.freeze({
-      ...phaseBase(cwd, sessionId),
+      ...phaseBase(cwd, sessionId, phase),
       operation: "begin",
       blockerResolved: false
     });
   }
   if (options.length === 1 && options[0] === "--blocker-resolved") {
     return Object.freeze({
-      ...phaseBase(cwd, sessionId),
+      ...phaseBase(cwd, sessionId, phase),
       operation: "begin",
       blockerResolved: true
     });
   }
   if ((options.length === 2 || options.length === 3) && options[0] === "--interruption" && (options.length === 2 || options[2] === "--blocker-resolved")) {
     return Object.freeze({
-      ...phaseBase(cwd, sessionId),
+      ...phaseBase(cwd, sessionId, phase),
       operation: "begin",
       interruption: parseInterruption(options[1]),
       blockerResolved: options.length === 3
@@ -1275,7 +1231,7 @@ function parsePhaseBegin(cwd, sessionId, options) {
     argument: options[0] ?? ""
   });
 }
-function parsePhaseStop(cwd, sessionId, options) {
+function parsePhaseStop(cwd, sessionId, options, phase) {
   const blocker = options[1];
   if (options[0] !== "--blocker" || blocker === void 0 || blocker.trim().length === 0) {
     invalidArguments("Expected --blocker <non-empty-text>.", {
@@ -1284,14 +1240,14 @@ function parsePhaseStop(cwd, sessionId, options) {
   }
   if (options.length === 2) {
     return Object.freeze({
-      ...phaseBase(cwd, sessionId),
+      ...phaseBase(cwd, sessionId, phase),
       operation: "stop",
       blocker
     });
   }
   if (options.length === 4 && options[2] === "--interruption") {
     return Object.freeze({
-      ...phaseBase(cwd, sessionId),
+      ...phaseBase(cwd, sessionId, phase),
       operation: "stop",
       blocker,
       interruption: parseInterruption(options[3])
@@ -1306,20 +1262,27 @@ function parsePhaseArguments(cwd, argv) {
   if (operation !== "begin" && operation !== "complete" && operation !== "stop") {
     invalidArguments("Unknown phase operation.", { operation: operation ?? "" });
   }
-  if (argv[4] !== "nttask") {
+  if (argv[4] !== "nttask" && argv[4] !== "ntgrill") {
     invalidArguments("Unknown phase.", { phase: argv[4] ?? "" });
   }
+  const phase = argv[4];
   const sessionId = requireSessionId(argv);
   const options = argv.slice(7);
-  if (operation === "begin") return parsePhaseBegin(cwd, sessionId, options);
-  if (operation === "stop") return parsePhaseStop(cwd, sessionId, options);
+  if (operation === "begin") return parsePhaseBegin(cwd, sessionId, options, phase);
+  if (operation === "stop") return parsePhaseStop(cwd, sessionId, options, phase);
+  if (phase === "ntgrill") {
+    if (options.length !== 1 || options[0] !== "--user-confirmed") {
+      invalidArguments("ntgrill completion requires --user-confirmed.", { argument: options[0] ?? "" });
+    }
+    return Object.freeze({ ...phaseBase(cwd, sessionId, phase), operation: "complete", userConfirmed: true });
+  }
   if (options.length !== 0) {
     invalidArguments("The phase complete command accepts no extra arguments.", {
       argument: options[0] ?? ""
     });
   }
   return Object.freeze({
-    ...phaseBase(cwd, sessionId),
+    ...phaseBase(cwd, sessionId, phase),
     operation: "complete"
   });
 }
@@ -1330,8 +1293,8 @@ function operationForArguments(argv) {
   if (argv[2] === "run" && (argv[3] === "start" || argv[3] === "cancel" || argv[3] === "complete")) {
     return `run ${argv[3]}`;
   }
-  if (argv[2] === "phase" && (argv[3] === "begin" || argv[3] === "complete" || argv[3] === "stop") && argv[4] === "nttask") {
-    return `phase ${argv[3]} nttask`;
+  if (argv[2] === "phase" && (argv[3] === "begin" || argv[3] === "complete" || argv[3] === "stop") && (argv[4] === "nttask" || argv[4] === "ntgrill")) {
+    return `phase ${argv[3]} ${argv[4]}`;
   }
   return argv[2] ?? "unknown";
 }
@@ -1385,6 +1348,62 @@ function createFailureResponse(context) {
 }
 function serializeResponse(response) {
   return JSON.stringify(response) + "\n";
+}
+
+// src/runtime/ntgrill.ts
+async function completeNtgrillPhase(projectRoot, input, options = {}) {
+  validateSessionId(input.sessionId);
+  if (input.userConfirmed !== true) {
+    throw new WorkflowError({
+      code: ERROR_CODES.INVALID_INPUT,
+      message: "ntgrill completion requires explicit user confirmation of shared understanding.",
+      details: { argument: "--user-confirmed" }
+    });
+  }
+  let runId;
+  return runStateTransaction(projectRoot, (state) => {
+    requireActivePhase(state, "phase complete ntgrill", "ntgrill");
+    requireOwner(state, input.sessionId);
+    runId = state.current.run_id;
+    return {
+      next_work_number: state.next_work_number,
+      current: {
+        run_id: runId,
+        lifecycle: "plan-ready",
+        phase: null,
+        owner: null,
+        blocker: null,
+        work: null
+      }
+    };
+  }, {
+    ...options,
+    prepareCommit: () => validateBrief(projectRoot, runId, "ntgrill")
+  });
+}
+
+// src/runtime/nttask.ts
+async function completeNttaskPhase(projectRoot, input) {
+  validateSessionId(input.sessionId);
+  let runId;
+  return runStateTransaction(projectRoot, (state) => {
+    requireActivePhase(state, "phase complete nttask", "nttask");
+    requireOwner(state, input.sessionId);
+    runId = state.current.run_id;
+    return {
+      next_work_number: state.next_work_number,
+      current: {
+        run_id: runId,
+        lifecycle: "brief-ready",
+        phase: null,
+        owner: null,
+        blocker: null,
+        work: null
+      }
+    };
+  }, {
+    prepareCommit: () => validateNttaskBrief(projectRoot, runId)
+  });
 }
 
 // src/runtime/run.ts
@@ -1581,23 +1600,15 @@ var RUN_FAILURE_ACTION = action(
   null,
   "Resolve the reported run failure before retrying."
 );
-var PHASE_FAILURE_ACTION = action(
-  "nttask",
-  "Resolve the reported phase failure before retrying nttask."
-);
-var OWNERSHIP_CONFLICT_ACTION = action(
-  "nttask",
-  "Continue in the recorded owner session, or retry with explicit --interruption authority."
-);
-var UNRESOLVED_BLOCKER_ACTION = action(
-  "nttask",
-  "Resolve the recorded blocker, then retry phase begin nttask with --blocker-resolved."
-);
-var COMPLETE_OWNERSHIP_CONFLICT_ACTION = action(
-  "nttask",
-  "Continue in the recorded owner session, or replace it with phase begin nttask --interruption <provider-ended|user-confirmed>."
-);
-var ACTIVE_PHASE_ACTION = action("nttask", "Continue the active nttask phase.");
+function phaseFailureAction(phase) {
+  return action(phase, `Resolve the reported phase failure before retrying ${phase}.`);
+}
+function blockerAction(phase) {
+  return action(phase, `Resolve the recorded blocker, then retry phase begin ${phase} with --blocker-resolved.`);
+}
+function ownerAction(phase, completing) {
+  return action(phase, completing ? `Continue in the recorded owner session, or replace it with phase begin ${phase} --interruption <provider-ended|user-confirmed>.` : "Continue in the recorded owner session, or retry with explicit --interruption authority.");
+}
 var NO_GIT_ACTION = action(
   null,
   "Initialize Git in this project or run status in an existing Git repository."
@@ -1613,10 +1624,12 @@ function nextActionFor(state, canStartRun = true) {
   }
   switch (state.current.lifecycle) {
     case "intake-active":
-      if (state.current.blocker !== null) return UNRESOLVED_BLOCKER_ACTION;
-      if (state.current.phase === "nttask") return ACTIVE_PHASE_ACTION;
+      if (state.current.blocker !== null) return blockerAction("nttask");
+      if (state.current.phase === "nttask") return action("nttask", "Continue the active nttask phase.");
       return DURABLE_INTAKE_ACTION;
     case "brief-ready":
+      if (state.current.blocker !== null) return blockerAction("ntgrill");
+      if (state.current.phase === "ntgrill") return action("ntgrill", "Continue the active ntgrill phase.");
       return action("ntgrill", "Continue with ntgrill.");
     case "plan-ready":
       return action("ntplan", "Continue with ntplan.");
@@ -1669,21 +1682,19 @@ async function executeRun(parsed) {
 async function executePhase(parsed) {
   const projectRoot = await resolveProjectRoot(parsed.cwd);
   if (parsed.operation === "complete") {
-    const result2 = await completeNttaskPhase(projectRoot, {
-      sessionId: parsed.sessionId
-    });
+    const result2 = parsed.phase === "ntgrill" ? await completeNtgrillPhase(projectRoot, { sessionId: parsed.sessionId, userConfirmed: parsed.userConfirmed === true }) : await completeNttaskPhase(projectRoot, { sessionId: parsed.sessionId });
     return { projectRoot, ...result2 };
   }
   const interruption = parsed.interruption === void 0 ? {} : { interruption: parsed.interruption };
   if (parsed.operation === "begin") {
-    const result2 = await beginNttaskPhase(projectRoot, {
+    const result2 = await beginPhase(projectRoot, parsed.phase, {
       sessionId: parsed.sessionId,
       blockerResolved: parsed.blockerResolved,
       ...interruption
     });
     return { projectRoot, ...result2 };
   }
-  const result = await stopNttaskPhase(projectRoot, {
+  const result = await stopPhase(projectRoot, parsed.phase, {
     sessionId: parsed.sessionId,
     blocker: parsed.blocker,
     ...interruption
@@ -1698,25 +1709,25 @@ function executeCommand(parsed) {
 function operationForCommand(parsed) {
   if (parsed.command === "status") return "status";
   if (parsed.command === "run") return `run ${parsed.operation}`;
-  return `phase ${parsed.operation} nttask`;
+  return `phase ${parsed.operation} ${parsed.phase}`;
 }
 function failureAction(parsed, error, state) {
   if (parsed.command === "status") return STATUS_FAILURE_ACTION;
   if (parsed.command === "run") {
     return error instanceof WorkflowError && error.code === ERROR_CODES.ILLEGAL_TRANSITION ? nextActionFor(state) : RUN_FAILURE_ACTION;
   }
-  if (!(error instanceof WorkflowError)) return PHASE_FAILURE_ACTION;
+  if (!(error instanceof WorkflowError)) return phaseFailureAction(parsed.phase);
   switch (error.code) {
     case ERROR_CODES.INVALID_INPUT:
       return INVALID_INPUT_ACTION;
     case ERROR_CODES.ILLEGAL_TRANSITION:
       return nextActionFor(state);
     case ERROR_CODES.OWNERSHIP_CONFLICT:
-      return parsed.operation === "complete" ? COMPLETE_OWNERSHIP_CONFLICT_ACTION : OWNERSHIP_CONFLICT_ACTION;
+      return ownerAction(parsed.phase, parsed.operation === "complete");
     case ERROR_CODES.UNRESOLVED_BLOCKER:
-      return UNRESOLVED_BLOCKER_ACTION;
+      return blockerAction(parsed.phase);
     default:
-      return PHASE_FAILURE_ACTION;
+      return phaseFailureAction(parsed.phase);
   }
 }
 async function execute(argv) {
