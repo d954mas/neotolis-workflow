@@ -3,6 +3,12 @@
   "version": "0.0.0",
   "description": "Provider-neutral development workflow for Claude Code and Codex",
   "type": "module",
+  "bin": {
+    "ntworkflow": "build/cli/ntworkflow.mjs"
+  },
+  "files": [
+    "build/cli/ntworkflow.mjs"
+  ],
   "engines": {
     "node": "^24.0.0"
   },
@@ -10,7 +16,10 @@
     "build": "node scripts/build.mjs",
     "check": "npm run typecheck && npm run lint",
     "lint": "eslint .",
+    "package": "node scripts/package-plugins.mjs",
+    "package:verify": "node --test tests/packaging/packaging.verify.ts",
     "test": "node scripts/run-tests.mjs",
+    "test:conformance": "node scripts/run-tests.mjs conformance",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

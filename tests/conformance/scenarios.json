@@ -1,0 +1,83 @@
+{
+  "format": 1,
+  "adapters": [
+    {
+      "provider": "claude",
+      "session_start": "plugins/claude-code/runtime/session-start.mjs",
+      "runtime": "plugins/claude-code/runtime/ntworkflow.mjs",
+      "payload": {
+        "session_id": "recorded-primary",
+        "transcript_path": "<fixture>/claude-transcript.jsonl",
+        "hook_event_name": "SessionStart",
+        "source": "startup"
+      }
+    },
+    {
+      "provider": "codex",
+      "session_start": "plugins/codex/runtime/session-start.mjs",
+      "runtime": "plugins/codex/runtime/ntworkflow.mjs",
+      "payload": {
+        "session_id": "recorded-primary",
+        "transcript_path": null,
+        "hook_event_name": "SessionStart",
+        "source": "startup"
+      }
+    }
+  ],
+  "scenarios": [
+    {
+      "name": "uninitialized status",
+      "git": true,
+      "steps": [
+        { "cli": ["status"] }
+      ]
+    },
+    {
+      "name": "complete intake",
+      "git": true,
+      "steps": [
+        { "cli": ["run", "start", "--session-id", "$owner"] },
+        { "cli": ["phase", "begin", "nttask", "--session-id", "$owner"] },
+        {
+          "write": {
+            "path": ".ntworkflow/runs/NT-001/BRIEF.md",
+            "fixture": "tests/fixtures/briefs/valid.md"
+          }
+        },
+        { "cli": ["phase", "complete", "nttask", "--session-id", "$owner"] }
+      ]
+    },
+    {
+      "name": "ownership blocker and re-entry",
+      "git": true,
+      "steps": [
+        { "cli": ["run", "start", "--session-id", "$owner"] },
+        { "cli": ["phase", "begin", "nttask", "--session-id", "$owner"] },
+        { "cli": ["phase", "begin", "nttask", "--session-id", "$other_owner"] },
+        {
+          "cli": [
+            "phase", "stop", "nttask", "--session-id", "$owner",
+            "--blocker", "Need fixture access."
+          ]
+        },
+        { "cli": ["phase", "begin", "nttask", "--session-id", "$owner"] },
+        {
+          "cli": [
+            "phase", "begin", "nttask", "--session-id", "$owner",
+            "--blocker-resolved"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "malformed state",
+      "git": true,
+      "seed": [
+        { "path": ".ntworkflow/state.json", "text": "{not-json}\n" }
+      ],
+      "steps": [
+        { "cli": ["status"] }
+      ]
+    }
+  ]
+}
