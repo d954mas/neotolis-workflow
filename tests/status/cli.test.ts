@@ -112,7 +112,7 @@ test('status reports an uninitialized project and the nttask next skill without 
     };
     assert.equal(response.ok, true);
     assert.equal(response.operation, 'status');
-    assert.equal(response.project_root, realpathSync(project));
+    assert.equal(response.project_root, realpathSync.native(project));
     assert.equal(response.state, null);
     assert.equal(response.next_action.skill, 'nttask');
     assert.deepEqual(response.warnings, []);
@@ -254,7 +254,7 @@ test('the committed empty consumer fixture stays unchanged when copied outside G
 
     assert.equal(result.status, 0, result.stderr);
     assert.equal(response.ok, true);
-    assert.equal(response.project_root, realpathSync(project));
+    assert.equal(response.project_root, realpathSync.native(project));
     assert.equal(response.state, null);
     assert.equal(response.next_action.skill, null);
     assert.match(response.next_action.instruction, /Git repository/u);

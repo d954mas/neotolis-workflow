@@ -97,7 +97,7 @@ test('built status resolves nested Git, worktree, and no-Git roots without mutat
 
       assert.equal(result.status, 0, result.stderr);
       assert.equal(response.ok, true);
-      assert.equal(response.project_root, realpathSync(scenario.expectedRoot));
+      assert.equal(response.project_root, realpathSync.native(scenario.expectedRoot));
       assert.equal(response.state, null);
       assert.equal(response.next_action.skill, scenario.expectedSkill);
       assert.deepEqual(snapshotTree(fixtureRoot), before);

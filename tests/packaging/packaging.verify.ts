@@ -126,7 +126,7 @@ test('npm tarball installs exact files, exposes ntworkflow, and shares runtime b
     };
     assert.equal(response.ok, true);
     assert.equal(response.operation, 'status');
-    assert.equal(response.project_root, realpathSync(consumer));
+    assert.equal(response.project_root, realpathSync.native(consumer));
 
     const npmRuntime = readFileSync(join(installedPackage, 'build', 'cli', 'ntworkflow.mjs'));
     assert.deepEqual(

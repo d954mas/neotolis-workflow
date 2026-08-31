@@ -28,7 +28,8 @@ function tree(root: string, directory = root): Record<string, Buffer | 'director
 }
 
 class Fixture {
-  readonly root = realpathSync(mkdtempSync(join(tmpdir(), 'ntworkflow-e2e пробел ')));
+  // Match the CLI native realpath, including Windows 8.3 temporary paths.
+  readonly root = realpathSync.native(mkdtempSync(join(tmpdir(), 'ntworkflow-e2e пробел ')));
   readonly results: unknown[] = [];
   readonly identities = new Map<string, string>();
   readonly adapter: Adapter;
