@@ -123,6 +123,13 @@ async function assertWorkflowDirectory(workflowPath: string): Promise<void> {
     }
   } catch (error) {
     if (error instanceof WorkflowError) throw error;
+    if (hasErrorCode(error, 'ENOENT')) {
+      throw new WorkflowError({
+        code: ERROR_CODES.ILLEGAL_TRANSITION,
+        message: 'A run must be started before this operation.',
+        details: { actual_lifecycle: null },
+      });
+    }
     throw commitFailure('workflow-directory', workflowPath);
   }
 }

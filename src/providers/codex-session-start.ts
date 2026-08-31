@@ -4,7 +4,7 @@ import {
   realpathSync,
   statSync,
 } from 'node:fs';
-import { isAbsolute, resolve } from 'node:path';
+import { isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export interface CodexSessionStartContext {
@@ -95,6 +95,6 @@ function runCodexSessionStartHook(): number {
 }
 
 if (process.argv[1] !== undefined
-  && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
   process.exitCode = runCodexSessionStartHook();
 }

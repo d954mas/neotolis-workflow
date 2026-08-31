@@ -104,6 +104,17 @@ function runtimeContext(adapter: Adapter, fixture: string): {
   ) as { owner: string; cli: string; cwd: string };
 }
 
+export function normalizeBytes(bytes: Buffer, replacements: ReadonlyMap<string, string>): Buffer {
+  // Latin-1 maps every byte one-to-one; UTF-8 decoding would erase invalid byte differences.
+  let normalized = bytes.toString('latin1');
+  for (const [from, to] of replacements) {
+    normalized = normalized.replaceAll(
+      Buffer.from(from).toString('latin1'), Buffer.from(to).toString('latin1'),
+    );
+  }
+  return Buffer.from(normalized, 'latin1');
+}
+
 function normalizedString(
   value: string,
   fixture: string,
@@ -154,7 +165,10 @@ function filesystemHashes(
     .filter((path) => !path.startsWith('.git/'))
     .map((path) => {
       const bytes = readFileSync(join(fixture, ...path.split('/')));
-      const normalized = normalizedString(bytes.toString('utf8'), fixture, owner, otherOwner);
+      const normalized = normalizeBytes(bytes, new Map([
+        [realpathSync(fixture), '<fixture>'], [fixture, '<fixture>'],
+        [owner, '<provider>:<session-primary>'], [otherOwner, '<provider>:<session-secondary>'],
+      ]));
       return [path, createHash('sha256').update(normalized).digest('hex')];
     }));
 }

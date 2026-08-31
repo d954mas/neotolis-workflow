@@ -11,14 +11,20 @@ permissions:
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    name: Verify (${{ matrix.os }}, Node 24)
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     steps:
+      - name: Preserve LF for byte-exact bundle checks
+        run: git config --global core.autocrlf false
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
-          node-version-file: .nvmrc
+          node-version: '24'
           cache: npm
       - run: npm ci
-      - run: npm test
-      - run: npm run check
-      - run: npm run build
+      - run: npm run verify

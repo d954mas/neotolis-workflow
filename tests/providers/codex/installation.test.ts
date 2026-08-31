@@ -15,6 +15,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join, relative, resolve } from 'node:path';
 import test from 'node:test';
+import { buildSync } from 'esbuild';
 
 const CODEX = resolve('node_modules/@openai/codex/bin/codex.js');
 const REMOTE_PLUGIN_OFF = ['-c', 'features.remote_plugin=false'];
@@ -386,21 +387,15 @@ test('checked Codex CLI bundle matches the current TypeScript source', () => {
   const root = mkdtempSync(join(tmpdir(), 'ntworkflow-codex-bundle-'));
   try {
     const output = join(root, 'ntworkflow.mjs');
-    const build = spawnSync(
-      process.execPath,
-      [
-        resolve('node_modules/esbuild/bin/esbuild'),
-        'src/cli/main.ts',
-        '--bundle',
-        '--format=esm',
-        '--platform=node',
-        '--target=node24',
-        '--banner:js=/* eslint-disable */',
-        `--outfile=${output}`,
-      ],
-      { encoding: 'utf8' },
-    );
-    expectSuccess(build);
+    buildSync({
+      entryPoints: ['src/cli/main.ts'],
+      bundle: true,
+      format: 'esm',
+      platform: 'node',
+      target: 'node24',
+      banner: { js: '/* eslint-disable */' },
+      outfile: output,
+    });
     assert.deepEqual(
       readFileSync(output),
       readFileSync('plugins/codex/runtime/ntworkflow.mjs'),
@@ -414,21 +409,15 @@ test('checked Codex SessionStart bundle matches the current TypeScript source', 
   const root = mkdtempSync(join(tmpdir(), 'ntworkflow-codex-session-bundle-'));
   try {
     const output = join(root, 'session-start.mjs');
-    const build = spawnSync(
-      process.execPath,
-      [
-        resolve('node_modules/esbuild/bin/esbuild'),
-        'src/providers/codex-session-start.ts',
-        '--bundle',
-        '--format=esm',
-        '--platform=node',
-        '--target=node24',
-        '--banner:js=/* eslint-disable */',
-        '--outfile=' + output,
-      ],
-      { encoding: 'utf8' },
-    );
-    expectSuccess(build);
+    buildSync({
+      entryPoints: ['src/providers/codex-session-start.ts'],
+      bundle: true,
+      format: 'esm',
+      platform: 'node',
+      target: 'node24',
+      banner: { js: '/* eslint-disable */' },
+      outfile: output,
+    });
     assert.deepEqual(
       readFileSync(output),
       readFileSync('plugins/codex/runtime/session-start.mjs'),

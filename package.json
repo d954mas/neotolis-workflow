@@ -20,7 +20,9 @@
     "package:verify": "node --test tests/packaging/packaging.verify.ts",
     "test": "node scripts/run-tests.mjs",
     "test:conformance": "node scripts/run-tests.mjs conformance",
-    "typecheck": "tsc --noEmit"
+    "test:e2e": "node scripts/run-tests.mjs e2e",
+    "typecheck": "tsc --noEmit",
+    "verify": "npm run check && npm run build && npm --offline test && npm --offline run package && npm --offline run package:verify"
   },
   "devDependencies": {
     "@anthropic-ai/claude-code": "2.1.220",

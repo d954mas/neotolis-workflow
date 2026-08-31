@@ -755,6 +755,13 @@ async function assertWorkflowDirectory(workflowPath) {
     }
   } catch (error) {
     if (error instanceof WorkflowError) throw error;
+    if (hasErrorCode(error, "ENOENT")) {
+      throw new WorkflowError({
+        code: ERROR_CODES.ILLEGAL_TRANSITION,
+        message: "A run must be started before this operation.",
+        details: { actual_lifecycle: null }
+      });
+    }
     throw commitFailure("workflow-directory", workflowPath);
   }
 }
@@ -889,9 +896,10 @@ function artifactFailure(path, reason) {
     details: { path, reason }
   });
 }
-function headings(markdown) {
+function parseBrief(markdown) {
   const result = [];
   const lines = markdown.split(/\r?\n/u);
+  let htmlComment = false;
   let fence = null;
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index] ?? "";
@@ -901,6 +909,13 @@ function headings(markdown) {
       if (closingMarker?.[0] === fence.character && closingMarker.length >= fence.length) {
         fence = null;
       }
+      continue;
+    }
+    if (htmlComment || /^ {0,3}<!--/u.test(line)) {
+      lines[index] = line.replace(/(?:^|<!--).*?(-->|$)/gu, (_comment, ending) => {
+        htmlComment = ending !== "-->";
+        return "";
+      });
       continue;
     }
     const openingMatch = /^ {0,3}(`{3,}|~{3,})(.*)$/u.exec(line);
@@ -921,10 +936,10 @@ function headings(markdown) {
       line: index
     });
   }
-  return result;
+  return { headings: result, lines };
 }
 function validateBriefStructure(markdown, path) {
-  const parsedHeadings = headings(markdown);
+  const { headings: parsedHeadings, lines } = parseBrief(markdown);
   const titles = parsedHeadings.filter((heading) => heading.level === 1);
   const title = titles[0];
   if (titles.length !== 1 || title === void 0 || title.text.length === 0) {
@@ -943,7 +958,6 @@ function validateBriefStructure(markdown, path) {
       "required H2 sections must appear once in order; only a final Open questions section is optional"
     );
   }
-  const lines = markdown.split(/\r?\n/u);
   for (const [index, section] of sections.entries()) {
     const nextLine = sections[index + 1]?.line ?? lines.length;
     const content = lines.slice(section.line + 1, nextLine).join("\n").trim();

@@ -25,9 +25,10 @@ function artifactFailure(path: string, reason: string): never {
   });
 }
 
-function headings(markdown: string): Heading[] {
+function parseBrief(markdown: string): { headings: Heading[]; lines: string[] } {
   const result: Heading[] = [];
   const lines = markdown.split(/\r?\n/u);
+  let htmlComment = false;
   let fence: { character: '`' | '~'; length: number } | null = null;
 
   for (let index = 0; index < lines.length; index += 1) {
@@ -41,6 +42,16 @@ function headings(markdown: string): Heading[] {
       ) {
         fence = null;
       }
+      continue;
+    }
+
+    // HTML comment blocks cannot supply headings or section content.
+    if (htmlComment || /^ {0,3}<!--/u.test(line)) {
+      // Keep visible text after the closing marker, including between adjacent comments.
+      lines[index] = line.replace(/(?:^|<!--).*?(-->|$)/gu, (_comment, ending: string) => {
+        htmlComment = ending !== '-->';
+        return '';
+      });
       continue;
     }
 
@@ -64,11 +75,11 @@ function headings(markdown: string): Heading[] {
     });
   }
 
-  return result;
+  return { headings: result, lines };
 }
 
 function validateBriefStructure(markdown: string, path: string): void {
-  const parsedHeadings = headings(markdown);
+  const { headings: parsedHeadings, lines } = parseBrief(markdown);
   const titles = parsedHeadings.filter((heading) => heading.level === 1);
   const title = titles[0];
   if (titles.length !== 1 || title === undefined || title.text.length === 0) {
@@ -95,7 +106,6 @@ function validateBriefStructure(markdown: string, path: string): void {
     );
   }
 
-  const lines = markdown.split(/\r?\n/u);
   for (const [index, section] of sections.entries()) {
     const nextLine = sections[index + 1]?.line ?? lines.length;
     const content = lines.slice(section.line + 1, nextLine).join('\n').trim();

@@ -7,7 +7,7 @@ import {
   realpathSync,
   statSync
 } from "node:fs";
-import { isAbsolute, resolve } from "node:path";
+import { isAbsolute } from "node:path";
 import { fileURLToPath } from "node:url";
 function invalid(message) {
   throw new Error(`Invalid Claude SessionStart payload: ${message}`);
@@ -72,7 +72,7 @@ function runClaudeSessionStartHook() {
     return 2;
   }
 }
-if (process.argv[1] !== void 0 && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (process.argv[1] !== void 0 && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
   process.exitCode = runClaudeSessionStartHook();
 }
 export {

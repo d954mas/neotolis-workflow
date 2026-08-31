@@ -275,7 +275,7 @@ test('begin requires intake-active and mutators require an initialized workflow'
       }),
     ] as const) {
       await assert.rejects(operation(), (error: unknown) => {
-        assert.equal((error as WorkflowError).code, ERROR_CODES.COMMIT_FAILURE);
+        assert.equal((error as WorkflowError).code, ERROR_CODES.ILLEGAL_TRANSITION);
         return true;
       });
     }

@@ -13,6 +13,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join, relative, resolve } from 'node:path';
 import test from 'node:test';
+import { buildSync } from 'esbuild';
 
 const CLAUDE = resolve('node_modules/@anthropic-ai/claude-code/bin/claude.exe');
 
@@ -191,21 +192,15 @@ test('checked Claude runtime bundles match current TypeScript sources', () => {
       const output = join(root, installed.endsWith('ntworkflow.mjs')
         ? 'ntworkflow.mjs'
         : 'session-start.mjs');
-      const build = spawnSync(
-        process.execPath,
-        [
-          resolve('node_modules/esbuild/bin/esbuild'),
-          source,
-          '--bundle',
-          '--format=esm',
-          '--platform=node',
-          '--target=node24',
-          '--banner:js=/* eslint-disable */',
-          `--outfile=${output}`,
-        ],
-        { encoding: 'utf8' },
-      );
-      expectSuccess(build);
+      buildSync({
+        entryPoints: [source],
+        bundle: true,
+        format: 'esm',
+        platform: 'node',
+        target: 'node24',
+        banner: { js: '/* eslint-disable */' },
+        outfile: output,
+      });
       assert.deepEqual(readFileSync(output), readFileSync(installed));
     }
   } finally {
