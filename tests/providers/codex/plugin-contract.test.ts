@@ -13,11 +13,16 @@ function filesUnder(root: string, directory = root): string[] {
   return files.sort();
 }
 
-test('Codex plugin contains the three implemented skills, planning roles, license, identity hook, and runtime', () => {
+test('Codex plugin contains four implemented skills, required native roles, identity hook, and runtime', () => {
   assert.deepEqual(filesUnder(resolve('plugins/codex')), [
     '.codex-plugin/plugin.json',
     'agents/ntplan_critic.toml',
     'agents/ntplan_researcher.toml',
+    'agents/ntwork_code_reviewer.toml',
+    'agents/ntwork_implementer.toml',
+    'agents/ntwork_nyquist_auditor.toml',
+    'agents/ntwork_spec_integration_reviewer.toml',
+    'agents/ntwork_task_reviewer.toml',
     'hooks/hooks.json',
     'runtime/ntworkflow.mjs',
     'runtime/session-start.mjs',
@@ -25,6 +30,7 @@ test('Codex plugin contains the three implemented skills, planning roles, licens
     'skills/ntgrill/SKILL.md',
     'skills/ntplan/SKILL.md',
     'skills/nttask/SKILL.md',
+    'skills/ntwork/SKILL.md',
   ]);
 });
 
@@ -36,13 +42,13 @@ test('Codex manifests expose the isolated local workflow plugin', () => {
   assert.deepEqual(plugin, {
     name: 'neotolis-workflow',
     version: '0.0.0',
-    description: 'Rigorous intake, decision grilling and researched planning for Neotolis Workflow.',
+    description: 'Rigorous intake, planning, execution and review for Neotolis Workflow.',
     author: { name: 'Neotolis' },
     skills: './skills/',
     interface: {
       displayName: 'Neotolis Workflow',
-      shortDescription: 'Intake, grilling and researched planning for large development work.',
-      longDescription: 'Create a brief, resolve decisions, then research and approve an executable plan.',
+      shortDescription: 'Plan, execute and review large development work.',
+      longDescription: 'Create a brief, resolve decisions, approve a plan, then execute and independently review it.',
       developerName: 'Neotolis',
       category: 'Developer Tools',
       capabilities: [],

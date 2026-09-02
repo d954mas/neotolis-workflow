@@ -25,7 +25,7 @@ test('package metadata locks the Node and provider CLI contract', async () => {
     typescript: '6.0.3',
     'typescript-eslint': '8.67.0',
   });
-  assert.equal(await readFile('.nvmrc', 'utf8'), '24\n');
+  assert.equal((await readFile('.nvmrc', 'utf8')).replaceAll('\r\n', '\n'), '24\n');
 });
 
 test('lockfile root exactly matches the package development dependencies', async () => {

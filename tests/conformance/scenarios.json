@@ -147,6 +147,43 @@
         {"cli":["phase","begin","ntplan","--session-id","$owner","--researcher-available","--critic-available","--blocker-resolved"]},
         {"cli":["run","cancel","--session-id","$owner","--user-confirmed"]}
       ]
+    },
+    {
+      "name": "approved work executes through independent final gates",
+      "git": true,
+      "steps": [
+        {"write":{"path":".ntworkflow/state.json","fixture":"tests/fixtures/states/plan-approved.json"}},
+        {"write":{"path":".ntworkflow/runs/NT-001/BRIEF.md","fixture":"tests/fixtures/briefs/grilled.md"}},
+        {"write":{"path":".ntworkflow/runs/NT-001/SPEC.md","fixture":"tests/fixtures/plans/SPEC.md"}},
+        {"write":{"path":".ntworkflow/runs/NT-001/PLAN.md","fixture":"tests/fixtures/plans/PLAN.md"}},
+        {"write":{"path":".ntworkflow/runs/NT-001/tasks/NT-001-01.md","fixture":"tests/fixtures/plans/NT-001-01.md"}},
+        {"write":{"path":".ntworkflow/runs/NT-001/tasks/NT-001-02.md","fixture":"tests/fixtures/plans/NT-001-02.md"}},
+        {"write":{"path":"implementation.txt","fixture":"tests/fixtures/work/baseline.txt"}},
+        {"git":["add","implementation.txt"]},
+        {"git":["-c","user.name=Neotolis Conformance","-c","user.email=conformance@example.invalid","commit","--quiet","-m","baseline"]},
+        {"cli":["phase","begin","ntwork","--session-id","$owner","--implementer-available","--task-reviewer-available","--nyquist-auditor-available","--spec-integration-reviewer-available","--code-reviewer-available","--base-branch","trunk"]},
+        {"cli":["work","record","pull-request","--session-id","$owner","--id","42","--url","https://example.invalid/pull/42"]},
+        {"cli":["task","begin","NT-001-01","--session-id","$owner"]},
+        {"write":{"path":"implementation.txt","fixture":"tests/fixtures/work/task-01.txt"}},
+        {"cli":["work","record","evidence","--session-id","$owner","--gate","task:NT-001-01","--procedure","verify task one","--result","pass","--expected","pass","--source-id","primary:01"]},
+        {"cli":["work","record","task-review","NT-001-01","--session-id","$owner","--packet","pass","--quality","pass","--source-id","reviewer:01"]},
+        {"git":["add","implementation.txt"]},
+        {"git":["-c","user.name=Neotolis Conformance","-c","user.email=conformance@example.invalid","commit","--quiet","-m","task one"]},
+        {"cli":["task","complete","NT-001-01","--session-id","$owner","--commit-id","$head"]},
+        {"cli":["task","begin","NT-001-02","--session-id","$owner"]},
+        {"write":{"path":"implementation.txt","fixture":"tests/fixtures/work/task-02.txt"}},
+        {"cli":["work","record","evidence","--session-id","$owner","--gate","task:NT-001-02","--procedure","verify task two","--result","pass","--expected","pass","--source-id","primary:02"]},
+        {"cli":["work","record","task-review","NT-001-02","--session-id","$owner","--packet","pass","--quality","pass","--source-id","reviewer:02"]},
+        {"git":["add","implementation.txt"]},
+        {"git":["-c","user.name=Neotolis Conformance","-c","user.email=conformance@example.invalid","commit","--quiet","-m","task two"]},
+        {"cli":["task","complete","NT-001-02","--session-id","$owner","--commit-id","$head"]},
+        {"cli":["work","record","gate","whole-plan","--session-id","$owner","--verdict","pass","--procedure","whole plan","--result","pass","--expected","pass","--source-id","implementer:whole"]},
+        {"cli":["work","record","gate","nyquist","--session-id","$owner","--verdict","pass","--procedure","nyquist audit","--result","pass","--expected","pass","--source-id","auditor:nyquist"]},
+        {"cli":["work","record","gate","spec-integration","--session-id","$owner","--verdict","pass","--procedure","spec integration review","--result","pass","--expected","pass","--source-id","reviewer:spec"]},
+        {"cli":["work","record","gate","code-review","--session-id","$owner","--verdict","pass","--procedure","code review","--result","pass","--expected","pass","--source-id","reviewer:code"]},
+        {"cli":["work","record","gate","ci","--session-id","$owner","--verdict","not-required","--procedure","ci policy","--result","not required","--expected","pass or not-required","--source-id","provider:ci"]},
+        {"cli":["phase","complete","ntwork","--session-id","$owner"]}
+      ]
     }
   ]
 }

@@ -40,7 +40,7 @@ class Fixture {
     });
     assert.equal(git.status, 0, git.stderr);
     this.write('.gitignore', 'user-owned-ignore-rule\n');
-    this.write('user.txt', 'Не менять существующую работу.\n');
+    this.write('user.txt', 'Не менять существующую работу: claude и codex.\n');
     this.write('user.bin', Buffer.from([0, 0x80, 0x81, 0xff]));
   }
 
@@ -115,19 +115,30 @@ class Fixture {
     return this.session('takeover', other);
   }
 
-  normalize(value: unknown): unknown {
+  normalize(value: unknown, key = ''): unknown {
     if (Buffer.isBuffer(value)) {
-      return normalizeBytes(value, new Map([[this.root, '<fixture>'], ...this.identities]));
+      const replacements = new Map([
+        [this.root, '<fixture>'],
+        ...this.identities,
+      ]);
+      if (key === '.ntworkflow/state.json') {
+        replacements.set('"provider": "claude"', '"provider": "<provider>"');
+        replacements.set('"provider": "codex"', '"provider": "<provider>"');
+      }
+      return normalizeBytes(value, replacements);
     }
     if (typeof value === 'string') {
       let result = value.replaceAll(this.root, '<fixture>');
       for (const [owner, label] of this.identities) result = result.replaceAll(owner, label);
-      return result;
+      return (key === 'provider' || key.endsWith('_provider'))
+        && (result === 'claude' || result === 'codex')
+        ? '<provider>' : result;
     }
-    if (Array.isArray(value)) return value.map((entry) => this.normalize(entry));
+    if (Array.isArray(value)) return value.map((entry) => this.normalize(entry, key));
     if (typeof value !== 'object' || value === null) return value;
     return Object.fromEntries(Object.entries(value)
-      .map(([key, entry]) => [key, this.normalize(entry)]));
+      .filter(([key]) => key !== '.git/' && !key.startsWith('.git/'))
+      .map(([entryKey, entry]) => [entryKey, this.normalize(entry, entryKey)]));
   }
 }
 
@@ -140,7 +151,9 @@ export async function withProviders(scenario: (fixture: Fixture) => void | Promi
       const before = fixture.tree();
       await scenario(fixture);
       const after = fixture.tree();
-      for (const [path, content] of Object.entries(before)) assert.deepEqual(after[path], content, path);
+      for (const [path, content] of Object.entries(before)) {
+        if (!path.startsWith('.git/')) assert.deepEqual(after[path], content, path);
+      }
       results.push(fixture.normalize({ steps: fixture.results, tree: after }));
     } finally {
       rmSync(fixture.root, { recursive: true, force: true });

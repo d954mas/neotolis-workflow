@@ -8,6 +8,8 @@ import { withProviders } from './harness.ts';
 test('E2E snapshots distinguish invalid UTF-8 bytes while normalizing fixture identities', async () => {
   await withProviders((fixture) => {
     const session = fixture.session();
+    const providerWords = Buffer.from('user selected claude and codex adapters\n');
+    assert.deepEqual(fixture.normalize(providerWords), providerWords);
     const content = Buffer.from(`${fixture.root}\n${session.owner}\nЮникод\n`);
     writeFileSync(join(fixture.root, 'asset.bin'), Buffer.concat([content, Buffer.from([0x80])]));
     const before = fixture.normalize(fixture.tree());

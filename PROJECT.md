@@ -3,13 +3,15 @@
 ## Status
 
 Contract design is confirmed. TB-01–TB-11 and the separate `ntgrill` slice are
-merged through `cde0eab1fdd4fd576fc4dd98da7c570ccf559df4`. The current working
-tree implements the separate `ntplan` slice: `plan-ready` and a grilled BRIEF →
-native research → primary-owned SPEC/PLAN/task packets → structural validation →
-independent criticism and convergence → explicit user approval → `plan-approved`.
-Its bounded plan is [implementation/NTPLAN.md](implementation/NTPLAN.md).
-`ntwork`, telemetry, `ntstats`, and `ntreflect` remain unimplemented. The full
-six-skill workflow is incomplete, and the working-tree changes require fresh CI.
+merged through `cde0eab1fdd4fd576fc4dd98da7c570ccf559df4`; the local baseline for
+this work is `54460a730521fa0d1707ad73208f4d500710d511`. The uncommitted working
+tree implements `ntplan` and the separate `ntwork` slice: `plan-approved` →
+sequential task commits with scoped evidence and independent review → whole-plan
+validation and three final review gates → applicable CI decision → passive
+`delivery-ready`. Its bounded plan is
+[implementation/NTWORK.md](implementation/NTWORK.md). Four of the six skills
+are implemented. Telemetry, `ntstats`, and `ntreflect` remain unimplemented;
+the working-tree changes require fresh CI and exact-byte live-provider smoke.
 
 ## Goal
 
@@ -106,9 +108,10 @@ GSD while retaining:
 
 ## Installation
 
-The packaged slice exposes `nttask`, `ntgrill`, and `ntplan`; the other three
-skills are not implemented. `ntgrill` uses only its primary agent. `ntplan`
-requires its packaged read-only researcher and critic definitions.
+The packaged slice exposes `nttask`, `ntgrill`, `ntplan`, and `ntwork`; `ntstats`
+and `ntreflect` are not implemented. `ntgrill` uses only its primary agent.
+`ntplan` requires its packaged read-only researcher and critic definitions;
+`ntwork` requires its implementer and four read-only reviewer definitions.
 Use Node.js 24 and Git. Verification pins Claude Code
 2.1.220 and Codex CLI 0.144.6 through `package-lock.json`; do not replace them with
 an unpinned download during a test run.
@@ -149,6 +152,21 @@ config_file = "<installed-plugin>/agents/ntplan_researcher.toml"
 
 [agents.ntplan_critic]
 config_file = "<installed-plugin>/agents/ntplan_critic.toml"
+
+[agents.ntwork_implementer]
+config_file = "<installed-plugin>/agents/ntwork_implementer.toml"
+
+[agents.ntwork_task_reviewer]
+config_file = "<installed-plugin>/agents/ntwork_task_reviewer.toml"
+
+[agents.ntwork_nyquist_auditor]
+config_file = "<installed-plugin>/agents/ntwork_nyquist_auditor.toml"
+
+[agents.ntwork_spec_integration_reviewer]
+config_file = "<installed-plugin>/agents/ntwork_spec_integration_reviewer.toml"
+
+[agents.ntwork_code_reviewer]
+config_file = "<installed-plugin>/agents/ntwork_code_reviewer.toml"
 ```
 
 The provider owns the model and effort in those TOMLs. Do not copy the role
@@ -219,6 +237,13 @@ exclusion, locked atomic completion, approval and critic attestations, late
 read-only diagnosis, and initialized pending work tasks. Semantic research
 quality, criticism and truthful approval remain live-model gates rather than CI
 claims.
+Work coverage includes clean Git and exact branch/HEAD boundaries, deterministic
+next-task selection, scoped pre-commit evidence, task and fix commits, independent
+task and code reviews, interrupted-task reuse, red-CI repair, whole-plan validation,
+Nyquist and specification/integration review, sticky same-revision gate failures,
+strict amendment recovery, delivery-ready diagnosis, and full Claude/Codex bundle
+and response parity. The runtime does not introduce a Git-tree fingerprint or
+claim model-authored evidence as a deterministic proof system.
 Commit-boundary checks additionally reuse the
 existing runtime fault-injection seam to prove that the old state remains until
 replacement and survives a failed commit; these checks do not add CLI options.
@@ -253,7 +278,7 @@ Windows 207 passed and one skip; Ubuntu and macOS 208 passed; packaging 5/5,
 E2E 12 and conformance six on every platform. The merged `main` SHA
 `cde0eab1fdd4fd576fc4dd98da7c570ccf559df4` passed post-merge
 [run 33401772202](https://github.com/d954mas/neotolis-workflow/actions/runs/33401772202).
-Neither run covers the current ntplan working tree.
+Neither run covers the current ntplan/ntwork working tree.
 
 CI references: [GitHub matrix jobs](https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/run-job-variations),
 [setup-node v6](https://github.com/actions/setup-node/tree/v6),
@@ -300,6 +325,16 @@ still requires fresh three-platform CI on the release commit.
    change. A late call diagnoses lifecycle and `next_action` without invoking
    another skill. Interrupted planning requires explicit restart confirmation,
    discards every old planning draft, and repeats research.
+8. From the resulting plan-approved run, invoke `ntwork` in a fresh primary
+   session. Confirm all five native roles, exact Git branch/HEAD preflight,
+   sequential task ownership, scoped evidence before each dedicated commit, and
+   independent PASS task review. Exercise interrupted-task reuse and one red-CI
+   repair without accepting unrelated or stale evidence.
+9. Confirm whole-plan validation, independent Nyquist, specification/integration,
+   and code-review PASS verdicts, the applicable CI decision, and passive
+   `delivery-ready`. Exercise one material plan amendment and its explicit
+   critic/user reapproval. A late call must diagnose the lifecycle without
+   mutation or automatic delivery.
 
 Record the release commit, OS, provider versions, session references, and
 observed results. Failures block release; do not repair state or weaken the
@@ -406,6 +441,55 @@ final runtime bundle. Evidence and exact boundaries are retained outside
 `build/` and copied after verification to `build/live-smoke-ntplan/REPORT.md`.
 No credentials were copied into fixtures, no project implementation began, and
 the exercise proves process restart rather than an operating-system reboot.
+
+## Local ntwork validation — 2026-09-02
+
+The uncommitted working tree remains on exact HEAD
+`54460a730521fa0d1707ad73208f4d500710d511` and passes Windows
+`npm run verify`: 248 tests total, 247 passed, one platform skip, and packaging
+5/5. Focused ntwork tests passed 25/25; the E2E suite passed 15/15, focused
+conformance passed 2/2, and provider tests passed 42/42. The final npm tarball
+SHA-256 is `17E0D091A3C964A409CB58B09D459208178271C6AAB55356D18A2E4F6B647857`.
+
+Three independent read-only reviews covered simplicity and reference alignment,
+architecture and recovery, and correctness and evidence. All finished PASS after
+fixes. Their criticism removed a forbidden Git-tree fingerprint and an
+uncontracted evidence verdict, tightened evidence freshness and fix-commit review,
+made red-CI and sticky-gate behavior revision-aware, reconciled plan amendments
+atomically, rejected ambiguous direct-child amendment recovery, restricted Claude
+reviewers to read-only tools, registered all seven Codex roles, and restored exact
+source/bundle parity. No extra workflow state, artifact, registry, fallback, or
+orchestrator was added.
+
+The comparison retained GSD's ordered phases, durable state, acceptance ownership,
+Nyquist validation, and independent review while omitting milestones, roadmaps,
+waves, and a central orchestrator. From Matt Pocock/Superpowers it retained
+falsifiable acceptance, verifiable tasks, compact grilling, and inline self-review,
+adding durable ownership and recovery. Spec Kit and OpenSpec align with the compact
+SPEC → PLAN → task structure and structural validation; their broader intake,
+registry, and exploration layers remain outside scope. BMAD is represented only by
+the deliberate omission of product-document ceremony. The `game-67-idle` reference
+supports local measurement direction, but its fixed project pipeline is omitted and
+telemetry remains future work. This comparison uses the authoritative local
+contracts and the synthesis already recorded in this file; the referenced
+`.ntworkflow/DESIGN-REFERENCES.md` is absent, so no missing source is presented as
+reviewed evidence.
+
+Deterministic installation and discovery passed for both providers. An actual
+Claude model launch was blocked by host safety before model execution; the Codex
+run was aborted by the user before producing model evidence. Those installed
+packages also predate the last review fixes, so no successful exact-byte live
+ntwork run is claimed. Release remains blocked on explicitly authorized live smoke
+against the final bytes and fresh Windows, Ubuntu, and macOS CI.
+
+Final release artifacts are `build/release/npm/neotolis-workflow-0.0.0.tgz`,
+`build/release/marketplaces/claude-code/`, and
+`build/release/marketplaces/codex/`. Runtime bundle SHA-256 is
+`10C6B0FF73491D6EE492E469FF3211A1BD20924C42C74EC390B638F2CA116AD8` for both
+providers. The Claude ntwork skill hash is
+`8BF1D17D1879FC335A499896C5B096BBC6F0ED013D73B0DD01AC3B95221032F8`; the Codex
+skill hash is `6D1A393C9E1757FF3ED20ECA4DEFFC3B1E0C19BFAD7ECAC9B6F4331DE328388B`.
+No commit, push, merge, publication, or release was performed.
 
 ## ntgrill contract and provenance
 

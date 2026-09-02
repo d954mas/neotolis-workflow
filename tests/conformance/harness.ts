@@ -36,7 +36,11 @@ interface WriteStep {
   };
 }
 
-type Step = CliStep | WriteStep;
+interface GitStep {
+  readonly git: readonly string[];
+}
+
+type Step = CliStep | WriteStep | GitStep;
 
 interface Scenario {
   readonly name: string;
@@ -117,12 +121,16 @@ function normalizedString(
   fixture: string,
   owner: string,
   otherOwner: string,
+  key: string,
 ): string {
-  return value
+  const normalized = value
     .replaceAll(realpathSync(fixture), '<fixture>')
     .replaceAll(fixture, '<fixture>')
     .replaceAll(owner, '<provider>:<session-primary>')
     .replaceAll(otherOwner, '<provider>:<session-secondary>');
+  return (key === 'provider' || key.endsWith('_provider'))
+    && (normalized === 'claude' || normalized === 'codex')
+    ? '<provider>' : normalized;
 }
 
 function normalize(
@@ -130,16 +138,17 @@ function normalize(
   fixture: string,
   owner: string,
   otherOwner: string,
+  key = '',
 ): unknown {
   if (typeof value === 'string') {
-    return normalizedString(value, fixture, owner, otherOwner);
+    return normalizedString(value, fixture, owner, otherOwner, key);
   }
   if (Array.isArray(value)) {
-    return value.map((entry) => normalize(entry, fixture, owner, otherOwner));
+    return value.map((entry) => normalize(entry, fixture, owner, otherOwner, key));
   }
   if (typeof value !== 'object' || value === null) return value;
-  return Object.fromEntries(Object.entries(value).map(([key, entry]) => (
-    [key, normalize(entry, fixture, owner, otherOwner)]
+  return Object.fromEntries(Object.entries(value).map(([entryKey, entry]) => (
+    [entryKey, normalize(entry, fixture, owner, otherOwner, entryKey)]
   )));
 }
 
@@ -162,17 +171,31 @@ function filesystemHashes(
     .filter((path) => !path.startsWith('.git/'))
     .map((path) => {
       const bytes = readFileSync(join(fixture, ...path.split('/')));
-      const normalized = normalizeBytes(bytes, new Map([
+      const replacements = new Map([
         [realpathSync(fixture), '<fixture>'], [fixture, '<fixture>'],
         [owner, '<provider>:<session-primary>'], [otherOwner, '<provider>:<session-secondary>'],
-      ]));
+      ]);
+      if (path === '.ntworkflow/state.json') {
+        replacements.set('"provider": "claude"', '"provider": "<provider>"');
+        replacements.set('"provider": "codex"', '"provider": "<provider>"');
+      }
+      const normalized = normalizeBytes(bytes, replacements);
       return [path, createHash('sha256').update(normalized).digest('hex')];
     }));
 }
 
-function commandArguments(arguments_: readonly string[], owner: string, otherOwner: string): string[] {
+function commandArguments(
+  arguments_: readonly string[],
+  owner: string,
+  otherOwner: string,
+  fixture: string,
+): string[] {
   return arguments_.map((argument) => (
-    argument === '$owner' ? owner : argument === '$other_owner' ? otherOwner : argument
+    argument === '$owner' ? owner
+      : argument === '$other_owner' ? otherOwner
+        : argument === '$head'
+          ? spawnSync('git', ['rev-parse', 'HEAD'], { cwd: fixture, encoding: 'utf8' }).stdout.trim()
+          : argument
   ));
 }
 
@@ -180,7 +203,13 @@ function runScenario(corpusScenario: Scenario, adapter: Adapter): ScenarioResult
   // Match the CLI native realpath, including Windows 8.3 temporary paths.
   const fixture = realpathSync.native(mkdtempSync(join(tmpdir(), `ntworkflow-conformance-${adapter.provider}-`)));
   try {
-    if (corpusScenario.git) mkdirSync(join(fixture, '.git'));
+    if (corpusScenario.git) {
+      const initialized = spawnSync('git', ['init', '--quiet', '--initial-branch=main'], {
+        cwd: fixture,
+        encoding: 'utf8',
+      });
+      assert.equal(initialized.status, 0, initialized.stderr);
+    }
     for (const seed of corpusScenario.seed ?? []) {
       const path = join(fixture, ...seed.path.split('/'));
       mkdirSync(dirname(path), { recursive: true });
@@ -202,13 +231,26 @@ function runScenario(corpusScenario: Scenario, adapter: Adapter): ScenarioResult
         writeFileSync(path, readFileSync(step.write.fixture));
         continue;
       }
+      if ('git' in step) {
+        const result = spawnSync('git', step.git, {
+          cwd: fixture,
+          encoding: 'utf8',
+          env: {
+            ...process.env,
+            GIT_AUTHOR_DATE: '2026-01-01T00:00:00Z',
+            GIT_COMMITTER_DATE: '2026-01-01T00:00:00Z',
+          },
+        });
+        assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+        continue;
+      }
 
       const command = spawnSync(
         process.execPath,
         [
           context.cli,
           '--cwd', context.cwd,
-          ...commandArguments(step.cli, context.owner, otherOwner),
+          ...commandArguments(step.cli, context.owner, otherOwner, fixture),
         ],
         { encoding: 'utf8' },
       );

@@ -1,15 +1,15 @@
 {
   "name": "neotolis-workflow",
   "version": "0.0.0",
-  "description": "Rigorous intake, decision grilling and researched planning for Neotolis Workflow.",
+  "description": "Rigorous intake, planning, execution and review for Neotolis Workflow.",
   "author": {
     "name": "Neotolis"
   },
   "skills": "./skills/",
   "interface": {
     "displayName": "Neotolis Workflow",
-    "shortDescription": "Intake, grilling and researched planning for large development work.",
-    "longDescription": "Create a brief, resolve decisions, then research and approve an executable plan.",
+    "shortDescription": "Plan, execute and review large development work.",
+    "longDescription": "Create a brief, resolve decisions, approve a plan, then execute and independently review it.",
     "developerName": "Neotolis",
     "category": "Developer Tools",
     "capabilities": [],

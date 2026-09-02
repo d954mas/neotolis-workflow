@@ -115,6 +115,11 @@ test('pinned Claude CLI validates, installs, lists, and discovers the staged plu
       '.claude-plugin/plugin.json',
     'agents/ntplan-critic.md',
     'agents/ntplan-researcher.md',
+    'agents/ntwork-code-reviewer.md',
+    'agents/ntwork-implementer.md',
+    'agents/ntwork-nyquist-auditor.md',
+    'agents/ntwork-spec-integration-reviewer.md',
+    'agents/ntwork-task-reviewer.md',
       'hooks/hooks.json',
       'runtime/ntworkflow.mjs',
       'runtime/session-start.mjs',
@@ -122,6 +127,7 @@ test('pinned Claude CLI validates, installs, lists, and discovers the staged plu
     'skills/ntgrill/SKILL.md',
     'skills/ntplan/SKILL.md',
     'skills/nttask/SKILL.md',
+    'skills/ntwork/SKILL.md',
     ]);
 
     const details = runClaude(
@@ -129,8 +135,8 @@ test('pinned Claude CLI validates, installs, lists, and discovers the staged plu
       'plugin', 'details', 'neotolis-workflow@neotolis-local',
     );
     expectSuccess(details);
-    assert.match(details.stdout, /Skills \(3\)\s+ntgrill, ntplan, nttask/);
-    assert.match(details.stdout, /Agents \(2\)/);
+    assert.match(details.stdout, /Skills \(4\)\s+ntgrill, ntplan, nttask, ntwork/);
+    assert.match(details.stdout, /Agents \(7\)/);
     assert.match(details.stdout, /Hooks \(1\)\s+SessionStart/);
     assert.match(details.stdout, /MCP servers \(0\)/);
     assert.match(details.stdout, /LSP servers \(0\)/);

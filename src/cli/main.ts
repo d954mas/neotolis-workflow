@@ -4,6 +4,8 @@ import type {
   PhaseArguments,
   RunArguments,
   StatusArguments,
+  TaskArguments,
+  WorkArguments,
 } from './arguments.ts';
 import { ERROR_CODES, EXIT_CODES, WorkflowError } from '../core/errors.ts';
 import {
@@ -16,7 +18,19 @@ import type { State } from '../core/state.ts';
 import { beginPhase, stopPhase } from '../runtime/phase.ts';
 import { completeNtgrillPhase } from '../runtime/ntgrill.ts';
 import { completeNttaskPhase } from '../runtime/nttask.ts';
-import { completeNtplanPhase, validatePlan } from '../runtime/ntplan.ts';
+import { amendWorkPlan, completeNtplanPhase, validatePlan } from '../runtime/ntplan.ts';
+import {
+  beginNtworkPhase,
+  beginWorkTask,
+  completeWorkTask,
+  completeNtworkPhase,
+  recordFinalGate,
+  recordFixCommit,
+  recordPullRequest,
+  recordTaskEvidence,
+  recordTaskReview,
+  stopNtworkPhase,
+} from '../runtime/ntwork.ts';
 import { readPreflight } from '../runtime/preflight.ts';
 import { isGitProjectRoot, resolveProjectRoot } from '../runtime/project-root.ts';
 import { cancelRun, completeRun, startRun } from '../runtime/run.ts';
@@ -38,13 +52,13 @@ const RUN_FAILURE_ACTION = action(
   null,
   'Resolve the reported run failure before retrying.',
 );
-function phaseFailureAction(phase: 'nttask' | 'ntgrill' | 'ntplan'): NextAction {
+function phaseFailureAction(phase: 'nttask' | 'ntgrill' | 'ntplan' | 'ntwork'): NextAction {
   return action(phase, `Resolve the reported phase failure before retrying ${phase}.`);
 }
-function blockerAction(phase: 'nttask' | 'ntgrill' | 'ntplan'): NextAction {
+function blockerAction(phase: 'nttask' | 'ntgrill' | 'ntplan' | 'ntwork'): NextAction {
   return action(phase, `Resolve the recorded blocker, then retry phase begin ${phase} with --blocker-resolved.`);
 }
-function ownerAction(phase: 'nttask' | 'ntgrill' | 'ntplan', completing: boolean): NextAction {
+function ownerAction(phase: 'nttask' | 'ntgrill' | 'ntplan' | 'ntwork', completing: boolean): NextAction {
   return action(phase, completing
     ? `Continue in the recorded owner session, or replace it with phase begin ${phase} --interruption <provider-ended|user-confirmed>.`
     : 'Continue in the recorded owner session, or retry with explicit --interruption authority.');
@@ -149,6 +163,12 @@ async function executePhase(parsed: PhaseArguments): Promise<CommandResult> {
   const projectRoot = await resolveProjectRoot(parsed.cwd);
 
   if (parsed.operation === 'complete') {
+    if (parsed.phase === 'ntwork') {
+      return {
+        projectRoot,
+        ...await completeNtworkPhase(projectRoot, { sessionId: parsed.sessionId }),
+      };
+    }
     const result = parsed.phase === 'ntplan'
       ? await completeNtplanPhase(projectRoot, { sessionId: parsed.sessionId, criticPassed: parsed.criticPassed === true, userConfirmed: parsed.userConfirmed === true })
       : parsed.phase === 'ntgrill'
@@ -161,7 +181,16 @@ async function executePhase(parsed: PhaseArguments): Promise<CommandResult> {
     ? {}
     : { interruption: parsed.interruption };
   if (parsed.operation === 'begin') {
-    const result = await beginPhase(projectRoot, parsed.phase, {
+    const result = parsed.phase === 'ntwork'
+      ? await beginNtworkPhase(projectRoot, {
+        sessionId: parsed.sessionId,
+        blockerResolved: parsed.blockerResolved,
+        availableRoles: parsed.availableWorkRoles ?? new Set(),
+        existingChangesConfirmed: parsed.existingChangesConfirmed === true,
+        ...(parsed.baseBranch === undefined ? {} : { baseBranch: parsed.baseBranch }),
+        ...interruption,
+      })
+      : await beginPhase(projectRoot, parsed.phase, {
       sessionId: parsed.sessionId,
       blockerResolved: parsed.blockerResolved,
       ...(parsed.phase === 'ntplan' ? {
@@ -169,15 +198,49 @@ async function executePhase(parsed: PhaseArguments): Promise<CommandResult> {
         criticAvailable: parsed.criticAvailable === true,
       } : {}),
       ...interruption,
-    });
+      });
     return { projectRoot, ...result };
   }
 
-  const result = await stopPhase(projectRoot, parsed.phase, {
+  const stopInput = {
     sessionId: parsed.sessionId,
     blocker: parsed.blocker,
     ...interruption,
-  });
+  };
+  const result = parsed.phase === 'ntwork'
+    ? await stopNtworkPhase(projectRoot, stopInput)
+    : await stopPhase(projectRoot, parsed.phase, stopInput);
+  return { projectRoot, ...result };
+}
+
+async function executeTask(parsed: TaskArguments): Promise<CommandResult> {
+  const projectRoot = await resolveProjectRoot(parsed.cwd);
+  const operation = parsed.operation === 'begin'
+    ? beginWorkTask(projectRoot, {
+      sessionId: parsed.sessionId,
+      taskId: parsed.taskId,
+      existingChangesConfirmed: parsed.existingChangesConfirmed,
+    })
+    : completeWorkTask(projectRoot, {
+      sessionId: parsed.sessionId, taskId: parsed.taskId, commitId: parsed.commitId,
+    });
+  return {
+    projectRoot,
+    ...await operation,
+  };
+}
+
+async function executeWork(parsed: WorkArguments): Promise<CommandResult> {
+  const projectRoot = await resolveProjectRoot(parsed.cwd);
+  const result = parsed.record === 'evidence'
+    ? await recordTaskEvidence(projectRoot, parsed)
+    : parsed.record === 'task-review'
+      ? await recordTaskReview(projectRoot, parsed)
+      : parsed.record === 'gate'
+        ? await recordFinalGate(projectRoot, parsed)
+        : parsed.record === 'fix-commit'
+          ? await recordFixCommit(projectRoot, parsed)
+          : await recordPullRequest(projectRoot, parsed);
   return { projectRoot, ...result };
 }
 
@@ -186,15 +249,29 @@ async function executeCommand(parsed: CliArguments): Promise<CommandResult> {
   if (parsed.command === 'run') return executeRun(parsed);
   if (parsed.command === 'plan') {
     const projectRoot = await resolveProjectRoot(parsed.cwd);
-    return { projectRoot, ...await validatePlan(projectRoot, parsed.sessionId) };
+    return {
+      projectRoot,
+      ...await (parsed.criticPassed === true && parsed.userConfirmed === true
+        ? amendWorkPlan(projectRoot, {
+          sessionId: parsed.sessionId,
+          criticPassed: true,
+          userConfirmed: true,
+          amendmentRecovery: parsed.amendmentRecovery === true,
+        })
+        : validatePlan(projectRoot, parsed.sessionId, parsed.amendmentRecovery === true)),
+    };
   }
+  if (parsed.command === 'task') return executeTask(parsed);
+  if (parsed.command === 'work') return executeWork(parsed);
   return executePhase(parsed);
 }
 
 function operationForCommand(parsed: CliArguments): string {
   if (parsed.command === 'status') return 'status';
   if (parsed.command === 'run') return `run ${parsed.operation}`;
-  if (parsed.command === 'plan') return 'plan validate';
+  if (parsed.command === 'plan') return `plan ${parsed.operation}`;
+  if (parsed.command === 'task') return `task ${parsed.operation}`;
+  if (parsed.command === 'work') return `work record ${parsed.record}`;
   return `phase ${parsed.operation} ${parsed.phase}`;
 }
 
@@ -208,6 +285,13 @@ function failureAction(
     return error instanceof WorkflowError && error.code === ERROR_CODES.ILLEGAL_TRANSITION
       ? nextActionFor(state)
       : RUN_FAILURE_ACTION;
+  }
+  if (parsed.command === 'task' || parsed.command === 'work') {
+    if (error instanceof WorkflowError) {
+      if (error.code === ERROR_CODES.OWNERSHIP_CONFLICT) return ownerAction('ntwork', false);
+      if (error.code === ERROR_CODES.ILLEGAL_TRANSITION) return nextActionFor(state);
+    }
+    return phaseFailureAction('ntwork');
   }
   const phase = parsed.command === 'plan' ? 'ntplan' : parsed.phase;
   if (!(error instanceof WorkflowError)) return phaseFailureAction(phase);

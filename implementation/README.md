@@ -6,6 +6,9 @@
   it does not change the completed tracer plan or packets.
 - [NTPLAN.md](./NTPLAN.md) bounds the separate planning slice; it does not
   rewrite the history of the completed tracer or ntgrill plans.
+- [NTWORK.md](./NTWORK.md) bounds the separate execution and verification slice.
+- [NTWORK-REPORT.md](./NTWORK-REPORT.md) records its implementation, reviews,
+  comparison, verification evidence, and release blockers.
 - [../PROJECT.md](../PROJECT.md) is the only current implementation status.
 
 A fresh task session reads the plan, its packet, and only the runtime or phase

@@ -295,7 +295,8 @@ test('pinned Codex installs and discovers the staged plugin without a model call
         (entry) => entry.name.startsWith('neotolis-workflow:'),
       );
       assert.deepEqual(skills?.map(({ name }) => name).sort(), [
-        'neotolis-workflow:ntgrill', 'neotolis-workflow:ntplan', 'neotolis-workflow:nttask',
+        'neotolis-workflow:ntgrill', 'neotolis-workflow:ntplan',
+        'neotolis-workflow:nttask', 'neotolis-workflow:ntwork',
       ]);
       assert.ok(skills?.every(({ enabled }) => enabled));
 
@@ -320,6 +321,11 @@ test('pinned Codex installs and discovers the staged plugin without a model call
         '.codex-plugin/plugin.json',
     'agents/ntplan_critic.toml',
     'agents/ntplan_researcher.toml',
+    'agents/ntwork_code_reviewer.toml',
+    'agents/ntwork_implementer.toml',
+    'agents/ntwork_nyquist_auditor.toml',
+    'agents/ntwork_spec_integration_reviewer.toml',
+    'agents/ntwork_task_reviewer.toml',
         'hooks/hooks.json',
         'runtime/ntworkflow.mjs',
         'runtime/session-start.mjs',
@@ -327,6 +333,7 @@ test('pinned Codex installs and discovers the staged plugin without a model call
     'skills/ntgrill/SKILL.md',
     'skills/ntplan/SKILL.md',
     'skills/nttask/SKILL.md',
+    'skills/ntwork/SKILL.md',
       ]);
       assert.equal(
         hook.command,
@@ -352,8 +359,13 @@ test('pinned Codex installs and discovers the staged plugin without a model call
       assert.equal(disabled.enabled, false);
       // Pinned Codex discovers user-configured roles; plugin installation alone
       // does not register agents/. Use its native config API, never a loader.
-      const roles = Object.fromEntries(['researcher', 'critic'].map(role => [
-        `ntplan_${role}`, { config_file: join(installPath, 'agents', `ntplan_${role}.toml`) },
+      const roleNames = [
+        'ntplan_researcher', 'ntplan_critic', 'ntwork_implementer',
+        'ntwork_task_reviewer', 'ntwork_nyquist_auditor',
+        'ntwork_spec_integration_reviewer', 'ntwork_code_reviewer',
+      ];
+      const roles = Object.fromEntries(roleNames.map(role => [
+        role, { config_file: join(installPath, 'agents', `${role}.toml`) },
       ]));
       await server.request(5, 'config/batchWrite', {
         edits: [{ keyPath: 'agents', value: roles, mergeStrategy: 'upsert' }],

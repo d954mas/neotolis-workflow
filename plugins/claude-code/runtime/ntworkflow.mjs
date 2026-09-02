@@ -1168,285 +1168,48 @@ async function stopPhase(projectRoot, phase, input) {
   return runStateTransaction(projectRoot, (state) => stopTransition(state, input, phase));
 }
 
-// src/cli/arguments.ts
-function invalidArguments(message, details) {
-  throw new WorkflowError({
-    code: ERROR_CODES.INVALID_INPUT,
+// src/runtime/git.ts
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+var execFileAsync = promisify(execFile);
+function gitFailure(message, operation) {
+  return new WorkflowError({
+    code: ERROR_CODES.ARTIFACT_FAILURE,
     message,
-    details
+    details: { operation }
   });
 }
-function requireSessionId(argv) {
-  if (argv[5] !== "--session-id" || argv[6] === void 0 || argv[6].length === 0) {
-    invalidArguments("Expected --session-id <provider:id>.", {
-      argument: argv[5] ?? ""
+async function git(projectRoot, arguments_) {
+  try {
+    const result = await execFileAsync("git", arguments_, {
+      cwd: projectRoot,
+      encoding: "utf8",
+      windowsHide: true
     });
+    return result.stdout.trim();
+  } catch {
+    throw gitFailure("The active Git context could not be inspected.", arguments_.join(" "));
   }
-  return argv[6];
 }
-function parseInterruption(value) {
-  if (!isInterruptionAuthority(value)) {
-    invalidArguments("Invalid --interruption authority.", {
-      value: value ?? ""
-    });
+async function readGitContext(projectRoot) {
+  const branch = await git(projectRoot, ["symbolic-ref", "--quiet", "--short", "HEAD"]);
+  if (branch.length === 0) {
+    throw gitFailure("ntwork requires a normal branch; detached HEAD is not allowed.", "symbolic-ref");
   }
-  return value;
+  const head = await git(projectRoot, ["rev-parse", "--verify", "HEAD"]);
+  const status = await git(projectRoot, [
+    "status",
+    "--porcelain=v1",
+    "-z",
+    "--untracked-files=all",
+    "--",
+    ".",
+    ":(exclude).ntworkflow"
+  ]);
+  return { branch, head, projectDirty: status.length > 0 };
 }
-function parseRunArguments(cwd, argv) {
-  const operation = argv[3];
-  if (operation !== "start" && operation !== "cancel" && operation !== "complete") {
-    invalidArguments("Unknown run operation.", { operation: operation ?? "" });
-  }
-  if (argv[4] !== "--session-id" || argv[5] === void 0 || argv[5].length === 0) {
-    invalidArguments("Expected --session-id <provider:id>.", {
-      argument: argv[4] ?? ""
-    });
-  }
-  const needsConfirmation = operation !== "start";
-  const expectedLength = needsConfirmation ? 7 : 6;
-  if (needsConfirmation && argv[6] !== "--user-confirmed") {
-    invalidArguments(`${operation} requires --user-confirmed.`, {
-      argument: argv[6] ?? ""
-    });
-  }
-  if (argv.length !== expectedLength) {
-    invalidArguments("Unexpected run command argument.", {
-      argument: argv[expectedLength] ?? ""
-    });
-  }
-  return Object.freeze({
-    cwd,
-    command: "run",
-    operation,
-    sessionId: argv[5],
-    userConfirmed: needsConfirmation
-  });
-}
-function phaseBase(cwd, sessionId, phase) {
-  return { cwd, command: "phase", phase, sessionId };
-}
-function parsePhaseBegin(cwd, sessionId, options, phase) {
-  if (phase === "ntplan" && options.some((option) => option === "--researcher-available" || option === "--critic-available")) {
-    const roleFlags = options.filter((option) => option === "--researcher-available" || option === "--critic-available");
-    if (new Set(roleFlags).size !== roleFlags.length) invalidArguments("Duplicate native role flag.", { argument: roleFlags[0] ?? "" });
-    return Object.freeze({
-      ...parsePhaseBegin(cwd, sessionId, options.filter((option) => !roleFlags.includes(option)), phase),
-      researcherAvailable: roleFlags.includes("--researcher-available"),
-      criticAvailable: roleFlags.includes("--critic-available")
-    });
-  }
-  if (options.length === 0) {
-    return Object.freeze({
-      ...phaseBase(cwd, sessionId, phase),
-      operation: "begin",
-      blockerResolved: false
-    });
-  }
-  if (options.length === 1 && options[0] === "--blocker-resolved") {
-    return Object.freeze({
-      ...phaseBase(cwd, sessionId, phase),
-      operation: "begin",
-      blockerResolved: true
-    });
-  }
-  if ((options.length === 2 || options.length === 3) && options[0] === "--interruption" && (options.length === 2 || options[2] === "--blocker-resolved")) {
-    return Object.freeze({
-      ...phaseBase(cwd, sessionId, phase),
-      operation: "begin",
-      interruption: parseInterruption(options[1]),
-      blockerResolved: options.length === 3
-    });
-  }
-  invalidArguments("Unexpected phase begin argument.", {
-    argument: options[0] ?? ""
-  });
-}
-function parsePhaseStop(cwd, sessionId, options, phase) {
-  const blocker = options[1];
-  if (options[0] !== "--blocker" || blocker === void 0 || blocker.trim().length === 0) {
-    invalidArguments("Expected --blocker <non-empty-text>.", {
-      argument: options[0] ?? ""
-    });
-  }
-  if (options.length === 2) {
-    return Object.freeze({
-      ...phaseBase(cwd, sessionId, phase),
-      operation: "stop",
-      blocker
-    });
-  }
-  if (options.length === 4 && options[2] === "--interruption") {
-    return Object.freeze({
-      ...phaseBase(cwd, sessionId, phase),
-      operation: "stop",
-      blocker,
-      interruption: parseInterruption(options[3])
-    });
-  }
-  invalidArguments("Unexpected phase stop argument.", {
-    argument: options[2] ?? ""
-  });
-}
-function parsePhaseArguments(cwd, argv) {
-  const operation = argv[3];
-  if (operation !== "begin" && operation !== "complete" && operation !== "stop") {
-    invalidArguments("Unknown phase operation.", { operation: operation ?? "" });
-  }
-  if (argv[4] !== "nttask" && argv[4] !== "ntgrill" && argv[4] !== "ntplan") {
-    invalidArguments("Unknown phase.", { phase: argv[4] ?? "" });
-  }
-  const phase = argv[4];
-  const sessionId = requireSessionId(argv);
-  const options = argv.slice(7);
-  if (operation === "begin") return parsePhaseBegin(cwd, sessionId, options, phase);
-  if (operation === "stop") return parsePhaseStop(cwd, sessionId, options, phase);
-  if (phase === "ntplan") {
-    if (options.length !== 2 || options[0] !== "--critic-pass" || options[1] !== "--user-confirmed") {
-      invalidArguments("ntplan completion requires --critic-pass --user-confirmed.", { argument: options[0] ?? "" });
-    }
-    return Object.freeze({ ...phaseBase(cwd, sessionId, phase), operation: "complete", criticPassed: true, userConfirmed: true });
-  }
-  if (phase === "ntgrill") {
-    if (options.length !== 1 || options[0] !== "--user-confirmed") {
-      invalidArguments("ntgrill completion requires --user-confirmed.", { argument: options[0] ?? "" });
-    }
-    return Object.freeze({ ...phaseBase(cwd, sessionId, phase), operation: "complete", userConfirmed: true });
-  }
-  if (options.length !== 0) {
-    invalidArguments("The phase complete command accepts no extra arguments.", {
-      argument: options[0] ?? ""
-    });
-  }
-  return Object.freeze({
-    ...phaseBase(cwd, sessionId, phase),
-    operation: "complete"
-  });
-}
-function operationForArguments(argv) {
-  if (argv[0] !== "--cwd" || argv[1] === void 0 || argv[1].length === 0) {
-    return "unknown";
-  }
-  if (argv[2] === "run" && (argv[3] === "start" || argv[3] === "cancel" || argv[3] === "complete")) {
-    return `run ${argv[3]}`;
-  }
-  if (argv[2] === "phase" && (argv[3] === "begin" || argv[3] === "complete" || argv[3] === "stop") && (argv[4] === "nttask" || argv[4] === "ntgrill" || argv[4] === "ntplan")) {
-    return `phase ${argv[3]} ${argv[4]}`;
-  }
-  if (argv[2] === "plan" && argv[3] === "validate") return "plan validate";
-  return argv[2] ?? "unknown";
-}
-function parseArguments(argv) {
-  if (argv[0] !== "--cwd" || argv[1] === void 0 || argv[1].length === 0) {
-    invalidArguments("Expected --cwd <path> before the command.", {
-      argument: argv[0] ?? ""
-    });
-  }
-  const command = argv[2];
-  if (command === "status") {
-    if (argv.length !== 3) {
-      invalidArguments("The status command accepts no arguments.", {
-        argument: argv[3] ?? ""
-      });
-    }
-    return Object.freeze({ cwd: argv[1], command });
-  }
-  if (command === "run") return parseRunArguments(argv[1], argv);
-  if (command === "phase") return parsePhaseArguments(argv[1], argv);
-  if (command === "plan") {
-    if (argv.length !== 6 || argv[3] !== "validate" || argv[4] !== "--session-id" || !argv[5]) {
-      invalidArguments("Expected plan validate --session-id <provider:id>.", { argument: argv[3] ?? "" });
-    }
-    return Object.freeze({ cwd: argv[1], command, operation: "validate", sessionId: argv[5] });
-  }
-  invalidArguments("Unknown command.", { command: command ?? "" });
-}
-
-// src/core/protocol.ts
-function createSuccessResponse(context) {
-  return {
-    ok: true,
-    operation: context.operation,
-    project_root: context.projectRoot,
-    state: context.state,
-    next_action: context.nextAction,
-    warnings: context.warnings
-  };
-}
-function createFailureResponse(context) {
-  const error = normalizeCaughtError(context.error);
-  return {
-    ok: false,
-    operation: context.operation,
-    project_root: context.projectRoot,
-    state: context.state,
-    next_action: context.nextAction,
-    warnings: context.warnings,
-    error: {
-      code: error.code,
-      exit_code: error.exitCode,
-      message: error.message,
-      details: error.details
-    }
-  };
-}
-function serializeResponse(response) {
-  return JSON.stringify(response) + "\n";
-}
-
-// src/runtime/ntgrill.ts
-async function completeNtgrillPhase(projectRoot, input, options = {}) {
-  validateSessionId(input.sessionId);
-  if (input.userConfirmed !== true) {
-    throw new WorkflowError({
-      code: ERROR_CODES.INVALID_INPUT,
-      message: "ntgrill completion requires explicit user confirmation of shared understanding.",
-      details: { argument: "--user-confirmed" }
-    });
-  }
-  let runId;
-  return runStateTransaction(projectRoot, (state) => {
-    requireActivePhase(state, "phase complete ntgrill", "ntgrill");
-    requireOwner(state, input.sessionId);
-    runId = state.current.run_id;
-    return {
-      next_work_number: state.next_work_number,
-      current: {
-        run_id: runId,
-        lifecycle: "plan-ready",
-        phase: null,
-        owner: null,
-        blocker: null,
-        work: null
-      }
-    };
-  }, {
-    ...options,
-    prepareCommit: () => validateBrief(projectRoot, runId, "ntgrill")
-  });
-}
-
-// src/runtime/nttask.ts
-async function completeNttaskPhase(projectRoot, input) {
-  validateSessionId(input.sessionId);
-  let runId;
-  return runStateTransaction(projectRoot, (state) => {
-    requireActivePhase(state, "phase complete nttask", "nttask");
-    requireOwner(state, input.sessionId);
-    runId = state.current.run_id;
-    return {
-      next_work_number: state.next_work_number,
-      current: {
-        run_id: runId,
-        lifecycle: "brief-ready",
-        phase: null,
-        owner: null,
-        blocker: null,
-        work: null
-      }
-    };
-  }, {
-    prepareCommit: () => validateNttaskBrief(projectRoot, runId)
-  });
+async function readCommitParent(projectRoot, commit) {
+  return git(projectRoot, ["rev-parse", "--verify", `${commit}^`]);
 }
 
 // src/runtime/plan-artifacts.ts
@@ -1572,12 +1335,1226 @@ async function validatePlanArtifacts(projectRoot, runId) {
   return order;
 }
 
+// src/runtime/ntwork.ts
+var NTWORK_ROLES = [
+  "implementer",
+  "task-reviewer",
+  "nyquist-auditor",
+  "spec-integration-reviewer",
+  "code-reviewer"
+];
+function illegal(state, operation) {
+  throw new WorkflowError({
+    code: ERROR_CODES.ILLEGAL_TRANSITION,
+    message: `${operation} is not legal from the current lifecycle.`,
+    details: {
+      actual_lifecycle: state?.current?.lifecycle ?? null,
+      actual_phase: state?.current?.phase ?? null
+    }
+  });
+}
+function ownership(recorded, requested) {
+  throw new WorkflowError({
+    code: ERROR_CODES.OWNERSHIP_CONFLICT,
+    message: "An ntwork owner is already recorded.",
+    details: { recorded_owner: recorded, requested_owner: requested }
+  });
+}
+function requireWorkState(state, operation) {
+  if (state?.current === null || state?.current === void 0 || state.current.lifecycle !== "plan-approved" && state.current.lifecycle !== "work-active" || state.current.work === null) illegal(state, operation);
+  return state;
+}
+function requireOwner2(state, input) {
+  if (state.current.phase !== "ntwork" || state.current.owner === null) {
+    illegal(state, "phase stop ntwork");
+  }
+  if (state.current.owner.session_id !== input.sessionId && input.interruption === void 0) {
+    ownership(state.current.owner.session_id, input.sessionId);
+  }
+}
+function requireActiveOwner(state, sessionId, operation) {
+  if (state.current.phase !== "ntwork" || state.current.owner === null) {
+    illegal(state, operation);
+  }
+  if (state.current.owner.session_id !== sessionId) {
+    ownership(state.current.owner.session_id, sessionId);
+  }
+}
+function requireRoles(available) {
+  for (const role of NTWORK_ROLES) {
+    if (!available.has(role)) {
+      throw new WorkflowError({
+        code: ERROR_CODES.ARTIFACT_FAILURE,
+        message: `The required native ntwork ${role} is unavailable.`,
+        details: { role }
+      });
+    }
+  }
+}
+function requireMatchingTaskOrder(recorded, artifact) {
+  if (recorded.length !== artifact.length || recorded.some((taskId, index) => taskId !== artifact[index])) {
+    throw new WorkflowError({
+      code: ERROR_CODES.ARTIFACT_FAILURE,
+      message: "Approved task artifacts do not match recorded ntwork state.",
+      details: { recorded_tasks: recorded, artifact_tasks: artifact }
+    });
+  }
+}
+async function beginNtworkPhase(projectRoot, input) {
+  validateSessionId(input.sessionId);
+  const snapshot = await readPreflight(projectRoot);
+  if (snapshot.state?.current?.lifecycle !== "plan-approved" && snapshot.state?.current?.lifecycle !== "work-active") illegal(snapshot.state, "phase begin ntwork");
+  if (input.baseBranch !== void 0 && input.baseBranch.trim().length === 0) {
+    throw new WorkflowError({
+      code: ERROR_CODES.INVALID_INPUT,
+      message: "The optional base branch must be non-empty.",
+      details: { argument: "--base-branch" }
+    });
+  }
+  requireRoles(input.availableRoles);
+  const provider = providerForSessionId(input.sessionId);
+  const observed = await readGitContext(projectRoot);
+  const recordedHead = snapshot.state?.current?.work?.head_commit;
+  const observedParent = recordedHead !== null && recordedHead !== void 0 && recordedHead !== observed.head ? await readCommitParent(projectRoot, observed.head) : null;
+  let runId = "";
+  let recordedTasks = [];
+  return runStateTransaction(projectRoot, (rawState) => {
+    const state = requireWorkState(rawState, "phase begin ntwork");
+    runId = state.current.run_id;
+    recordedTasks = state.current.work.tasks.map((task) => task.task_id);
+    if (state.current.blocker !== null && input.blockerResolved !== true) {
+      throw new WorkflowError({
+        code: ERROR_CODES.UNRESOLVED_BLOCKER,
+        message: "The recorded blocker must be explicitly resolved before ntwork begins.",
+        details: { blocker: state.current.blocker }
+      });
+    }
+    if (state.current.owner !== null && input.interruption === void 0) {
+      ownership(state.current.owner.session_id, input.sessionId);
+    }
+    if (state.current.work.provider !== null && state.current.work.provider !== provider) {
+      throw new WorkflowError({
+        code: ERROR_CODES.OWNERSHIP_CONFLICT,
+        message: "An active ntwork task may resume only under the recorded provider.",
+        details: { recorded_provider: state.current.work.provider, requested_provider: provider }
+      });
+    }
+    if (input.baseBranch !== void 0 && state.current.work.base_branch !== null && state.current.work.base_branch !== input.baseBranch) {
+      throw new WorkflowError({
+        code: ERROR_CODES.ARTIFACT_FAILURE,
+        message: "The supplied base branch does not match recorded ntwork state.",
+        details: {
+          recorded_base_branch: state.current.work.base_branch,
+          supplied_base_branch: input.baseBranch
+        }
+      });
+    }
+    const active = state.current.work.tasks.find((task) => task.status === "active");
+    if (observed.projectDirty && active === void 0 && input.existingChangesConfirmed !== true) {
+      throw new WorkflowError({
+        code: ERROR_CODES.ARTIFACT_FAILURE,
+        message: "Pre-existing project-file changes require explicit user permission before ntwork begins.",
+        details: { branch: observed.branch }
+      });
+    }
+    const commitAheadForActiveTask = active !== void 0 && state.current.work.head_commit !== null && observedParent === state.current.work.head_commit;
+    if (state.current.work.branch !== null && (state.current.work.branch !== observed.branch || state.current.work.head_commit !== observed.head && !commitAheadForActiveTask)) {
+      throw new WorkflowError({
+        code: ERROR_CODES.ARTIFACT_FAILURE,
+        message: "The active Git context does not match recorded ntwork state.",
+        details: {
+          recorded_branch: state.current.work.branch,
+          actual_branch: observed.branch,
+          recorded_head: state.current.work.head_commit,
+          actual_head: observed.head
+        }
+      });
+    }
+    return {
+      next_work_number: state.next_work_number,
+      current: {
+        ...state.current,
+        lifecycle: "work-active",
+        phase: "ntwork",
+        owner: { session_id: input.sessionId },
+        blocker: null,
+        work: {
+          ...state.current.work,
+          provider,
+          branch: state.current.work.branch ?? observed.branch,
+          base_branch: state.current.work.base_branch ?? input.baseBranch ?? observed.branch,
+          head_commit: state.current.work.head_commit ?? observed.head
+        }
+      }
+    };
+  }, {
+    prepareCommit: async () => {
+      await validateBrief(projectRoot, runId, "ntgrill");
+      requireMatchingTaskOrder(recordedTasks, await validatePlanArtifacts(projectRoot, runId));
+      const current = await readGitContext(projectRoot);
+      if (current.branch !== observed.branch || current.head !== observed.head || current.projectDirty !== observed.projectDirty) {
+        throw new WorkflowError({
+          code: ERROR_CODES.ARTIFACT_FAILURE,
+          message: "The Git context changed during ntwork preflight.",
+          details: { branch: current.branch, head: current.head }
+        });
+      }
+    }
+  });
+}
+async function stopNtworkPhase(projectRoot, input) {
+  validateSessionId(input.sessionId);
+  if (input.blocker.trim().length === 0) {
+    throw new WorkflowError({
+      code: ERROR_CODES.INVALID_INPUT,
+      message: "A controlled phase stop requires a non-empty blocker.",
+      details: { argument: "--blocker" }
+    });
+  }
+  return runStateTransaction(projectRoot, (rawState) => {
+    const state = requireWorkState(rawState, "phase stop ntwork");
+    requireOwner2(state, input);
+    return {
+      next_work_number: state.next_work_number,
+      current: {
+        ...state.current,
+        phase: null,
+        owner: null,
+        blocker: input.blocker
+      }
+    };
+  });
+}
+async function beginWorkTask(projectRoot, input) {
+  validateSessionId(input.sessionId);
+  const observed = await readGitContext(projectRoot);
+  if (observed.projectDirty && input.existingChangesConfirmed !== true) {
+    throw new WorkflowError({
+      code: ERROR_CODES.ARTIFACT_FAILURE,
+      message: "A new ntwork task requires a clean project worktree.",
+      details: { branch: observed.branch }
+    });
+  }
+  let runId = "";
+  let recordedTasks = [];
+  return runStateTransaction(projectRoot, (rawState) => {
+    const state = requireWorkState(rawState, "task begin");
+    requireActiveOwner(state, input.sessionId, "task begin");
+    runId = state.current.run_id;
+    recordedTasks = state.current.work.tasks.map((task) => task.task_id);
+    const active = state.current.work.tasks.find((task) => task.status === "active");
+    const next = state.current.work.tasks.find((task) => task.status !== "completed");
+    if (state.current.work.verdicts.ci === "fail") {
+      throw new WorkflowError({
+        code: ERROR_CODES.ILLEGAL_TRANSITION,
+        message: "Known failing required CI must be resolved before the next task begins.",
+        details: { next_task: next?.task_id ?? null }
+      });
+    }
+    if (active !== void 0 || next === void 0 || next.task_id !== input.taskId) {
+      throw new WorkflowError({
+        code: ERROR_CODES.ILLEGAL_TRANSITION,
+        message: "task begin requires the exact next pending task in approved stable order.",
+        details: {
+          requested_task: input.taskId,
+          next_task: next?.task_id ?? null,
+          active_task: active?.task_id ?? null
+        }
+      });
+    }
+    if (state.current.work.branch !== observed.branch || state.current.work.head_commit !== observed.head) {
+      throw new WorkflowError({
+        code: ERROR_CODES.ARTIFACT_FAILURE,
+        message: "The current Git branch or HEAD does not match recorded ntwork state.",
+        details: { actual_branch: observed.branch, actual_head: observed.head }
+      });
+    }
+    return {
+      next_work_number: state.next_work_number,
+      current: {
+        ...state.current,
+        work: {
+          ...state.current.work,
+          tasks: state.current.work.tasks.map((task) => task.task_id === input.taskId ? { ...task, status: "active", start_commit: observed.head } : task)
+        }
+      }
+    };
+  }, {
+    prepareCommit: async () => {
+      requireMatchingTaskOrder(recordedTasks, await validatePlanArtifacts(projectRoot, runId));
+      const current = await readGitContext(projectRoot);
+      if (current.branch !== observed.branch || current.head !== observed.head || current.projectDirty !== observed.projectDirty) {
+        throw new WorkflowError({
+          code: ERROR_CODES.ARTIFACT_FAILURE,
+          message: "The Git context changed during task begin.",
+          details: { branch: current.branch, head: current.head }
+        });
+      }
+    }
+  });
+}
+function requireText(value, field2) {
+  if (value.trim().length === 0) {
+    throw new WorkflowError({
+      code: ERROR_CODES.INVALID_INPUT,
+      message: `work record requires a non-empty ${field2}.`,
+      details: { argument: field2 }
+    });
+  }
+}
+function validateSourceIds(sourceIds) {
+  if (sourceIds.length === 0 || sourceIds.some((id) => id.length === 0)) {
+    throw new WorkflowError({
+      code: ERROR_CODES.INVALID_INPUT,
+      message: "work record requires at least one native source ID.",
+      details: { argument: "--source-id" }
+    });
+  }
+  return [...new Set(sourceIds)];
+}
+async function recordTaskEvidence(projectRoot, input) {
+  validateSessionId(input.sessionId);
+  for (const [field2, value] of [
+    ["gate", input.gate],
+    ["procedure", input.procedure],
+    ["result", input.result],
+    ["expected", input.expected]
+  ]) requireText(value, field2);
+  const sourceIds = validateSourceIds(input.sourceIds);
+  const observed = await readGitContext(projectRoot);
+  return runStateTransaction(projectRoot, (rawState) => {
+    const state = requireWorkState(rawState, "work record evidence");
+    requireActiveOwner(state, input.sessionId, "work record evidence");
+    const active = state.current.work.tasks.find((task) => task.status === "active");
+    const fixScope = input.gate.startsWith("fix:") ? input.gate.slice(4) : "";
+    const isTaskEvidence = active !== void 0 && input.gate === `task:${active.task_id}`;
+    const isFixEvidence = active === void 0 && fixScope.length > 0 && (fixScope === "integration" ? state.current.work.tasks.some((task) => task.status === "completed") : state.current.work.tasks.some((task) => task.task_id === fixScope && task.status === "completed"));
+    if (!isTaskEvidence && !isFixEvidence) {
+      throw new WorkflowError({
+        code: ERROR_CODES.ILLEGAL_TRANSITION,
+        message: "Task evidence must name the current active task gate.",
+        details: { gate: input.gate, active_task: active?.task_id ?? null }
+      });
+    }
+    if (state.current.work.branch !== observed.branch || state.current.work.head_commit !== observed.head) {
+      throw new WorkflowError({
+        code: ERROR_CODES.ARTIFACT_FAILURE,
+        message: "Task evidence does not match the recorded Git context.",
+        details: { branch: observed.branch, head: observed.head }
+      });
+    }
+    const evidence = {
+      gate: input.gate,
+      procedure: input.procedure,
+      revision: `worktree@${observed.head}`,
+      result: input.result,
+      expected: input.expected,
+      source_ids: sourceIds
+    };
+    const reviewGate = isTaskEvidence ? `task-review:${active.task_id}` : `fix-review:${fixScope}`;
+    return {
+      next_work_number: state.next_work_number,
+      current: {
+        ...state.current,
+        work: {
+          ...state.current.work,
+          tasks: state.current.work.tasks.map((task) => isTaskEvidence && task.task_id === active.task_id ? { ...task, packet_review: "pending", quality_review: "pending" } : task),
+          evidence: [
+            ...state.current.work.evidence.filter((item) => item.gate !== input.gate && item.gate !== reviewGate),
+            evidence
+          ]
+        }
+      }
+    };
+  });
+}
+async function recordTaskReview(projectRoot, input) {
+  validateSessionId(input.sessionId);
+  const sourceIds = validateSourceIds(input.sourceIds);
+  const observed = await readGitContext(projectRoot);
+  return runStateTransaction(projectRoot, (rawState) => {
+    const state = requireWorkState(rawState, "work record task-review");
+    requireActiveOwner(state, input.sessionId, "work record task-review");
+    const active = state.current.work.tasks.find((task) => task.status === "active");
+    const isTaskReview = active?.task_id === input.taskId;
+    const isFixReview = active === void 0 && (input.taskId === "integration" ? state.current.work.tasks.some((task) => task.status === "completed") : state.current.work.tasks.some((task) => task.task_id === input.taskId && task.status === "completed"));
+    if (!isTaskReview && !isFixReview) {
+      throw new WorkflowError({
+        code: ERROR_CODES.ILLEGAL_TRANSITION,
+        message: "Task review must name the current active task.",
+        details: { requested_task: input.taskId, active_task: active?.task_id ?? null }
+      });
+    }
+    if (state.current.work.branch !== observed.branch || state.current.work.head_commit !== observed.head) {
+      throw new WorkflowError({
+        code: ERROR_CODES.ARTIFACT_FAILURE,
+        message: "Task review does not match the recorded Git context.",
+        details: { branch: observed.branch, head: observed.head }
+      });
+    }
+    const gate = isTaskReview ? `task-review:${input.taskId}` : `fix-review:${input.taskId}`;
+    const evidenceGate = isTaskReview ? `task:${input.taskId}` : `fix:${input.taskId}`;
+    if (!state.current.work.evidence.some((item) => item.gate === evidenceGate && item.revision === `worktree@${observed.head}`)) {
+      throw new WorkflowError({
+        code: ERROR_CODES.ARTIFACT_FAILURE,
+        message: "Task review requires current passing canonical evidence first.",
+        details: { gate: evidenceGate }
+      });
+    }
+    return {
+      next_work_number: state.next_work_number,
+      current: {
+        ...state.current,
+        work: {
+          ...state.current.work,
+          tasks: state.current.work.tasks.map((task) => isTaskReview && task.task_id === input.taskId ? { ...task, packet_review: input.packet, quality_review: input.quality } : task),
+          evidence: [
+            ...state.current.work.evidence.filter((item) => item.gate !== gate),
+            {
+              gate,
+              procedure: "Independent native task review.",
+              revision: `worktree@${observed.head}`,
+              result: `packet=${input.packet}; quality=${input.quality}`,
+              expected: "packet=pass; quality=pass",
+              source_ids: sourceIds
+            }
+          ]
+        }
+      }
+    };
+  });
+}
+async function completeWorkTask(projectRoot, input) {
+  validateSessionId(input.sessionId);
+  requireText(input.commitId, "commit-id");
+  const observed = await readGitContext(projectRoot);
+  if (observed.projectDirty || observed.head !== input.commitId) {
+    throw new WorkflowError({
+      code: ERROR_CODES.ARTIFACT_FAILURE,
+      message: "task complete requires the supplied current commit and a clean project worktree.",
+      details: { supplied_commit: input.commitId, actual_head: observed.head }
+    });
+  }
+  const parent = await readCommitParent(projectRoot, input.commitId);
+  let runId = "";
+  let recordedTasks = [];
+  return runStateTransaction(projectRoot, (rawState) => {
+    const state = requireWorkState(rawState, "task complete");
+    requireActiveOwner(state, input.sessionId, "task complete");
+    runId = state.current.run_id;
+    recordedTasks = state.current.work.tasks.map((task) => task.task_id);
+    const active = state.current.work.tasks.find((task) => task.status === "active");
+    if (active?.task_id !== input.taskId) {
+      throw new WorkflowError({
+        code: ERROR_CODES.ILLEGAL_TRANSITION,
+        message: "task complete must name the current active task.",
+        details: { requested_task: input.taskId, active_task: active?.task_id ?? null }
+      });
+    }
+    if (active.start_commit === null || parent !== active.start_commit || active.packet_review !== "pass" || active.quality_review !== "pass") {
+      throw new WorkflowError({
+        code: ERROR_CODES.ARTIFACT_FAILURE,
+        message: "Task completion requires one dedicated commit and both task-review verdicts PASS.",
+        details: { task_id: input.taskId, start_commit: active.start_commit, commit_parent: parent }
+      });
+    }
+    const requiredGates = [`task:${input.taskId}`, `task-review:${input.taskId}`];
+    if (!requiredGates.every((gate) => state.current.work.evidence.some((item) => item.gate === gate && item.revision === `worktree@${parent}`))) {
+      throw new WorkflowError({
+        code: ERROR_CODES.ARTIFACT_FAILURE,
+        message: "Task completion requires fresh canonical verification and task-review evidence.",
+        details: { task_id: input.taskId }
+      });
+    }
+    return {
+      next_work_number: state.next_work_number,
+      current: {
+        ...state.current,
+        work: {
+          ...state.current.work,
+          head_commit: input.commitId,
+          tasks: state.current.work.tasks.map((task) => task.task_id === input.taskId ? { ...task, status: "completed", commit_id: input.commitId } : task),
+          evidence: state.current.work.evidence.map((item) => requiredGates.includes(item.gate) ? { ...item, revision: input.commitId } : item)
+        }
+      }
+    };
+  }, {
+    prepareCommit: async () => {
+      requireMatchingTaskOrder(recordedTasks, await validatePlanArtifacts(projectRoot, runId));
+      const current = await readGitContext(projectRoot);
+      if (current.branch !== observed.branch || current.head !== observed.head || current.projectDirty) {
+        throw new WorkflowError({
+          code: ERROR_CODES.ARTIFACT_FAILURE,
+          message: "The Git context changed during task completion.",
+          details: { branch: current.branch, head: current.head }
+        });
+      }
+    }
+  });
+}
+var FINAL_GATES = ["whole-plan", "nyquist", "spec-integration", "code-review", "ci"];
+function verdictKey(gate) {
+  return gate === "whole-plan" ? "whole_plan" : gate === "spec-integration" ? "spec_integration" : gate === "code-review" ? "code_review" : gate;
+}
+function validateGateVerdict(input) {
+  const valid = input.gate === "whole-plan" ? input.verdict === "pass" || input.verdict === "fail" : input.gate === "ci" ? input.verdict === "pass" || input.verdict === "fail" || input.verdict === "not-required" : input.verdict === "pass" || input.verdict === "block";
+  if (!valid) {
+    throw new WorkflowError({
+      code: ERROR_CODES.INVALID_INPUT,
+      message: `Verdict ${input.verdict} is invalid for ${input.gate}.`,
+      details: { gate: input.gate, verdict: input.verdict }
+    });
+  }
+}
+async function recordFinalGate(projectRoot, input) {
+  validateSessionId(input.sessionId);
+  validateGateVerdict(input);
+  for (const [field2, value] of [
+    ["procedure", input.procedure],
+    ["result", input.result],
+    ["expected", input.expected]
+  ]) requireText(value, field2);
+  const sourceIds = validateSourceIds(input.sourceIds);
+  const observed = await readGitContext(projectRoot);
+  if (observed.projectDirty) {
+    throw new WorkflowError({
+      code: ERROR_CODES.ARTIFACT_FAILURE,
+      message: "Final gate evidence requires a clean project worktree.",
+      details: { gate: input.gate }
+    });
+  }
+  return runStateTransaction(projectRoot, (rawState) => {
+    const state = requireWorkState(rawState, `work record ${input.gate}`);
+    requireActiveOwner(state, input.sessionId, `work record ${input.gate}`);
+    const allTasksCompleted2 = state.current.work.tasks.every((task) => task.status === "completed");
+    const workStarted = state.current.work.tasks.some((task) => task.status !== "pending");
+    if (input.gate === "ci" && !workStarted) {
+      throw new WorkflowError({
+        code: ERROR_CODES.ILLEGAL_TRANSITION,
+        message: "CI evidence requires an active or completed task boundary.",
+        details: { gate: input.gate }
+      });
+    }
+    if (input.gate !== "ci" && !allTasksCompleted2) {
+      throw new WorkflowError({
+        code: ERROR_CODES.ILLEGAL_TRANSITION,
+        message: "Final gates require every approved task to be completed.",
+        details: { gate: input.gate }
+      });
+    }
+    if (state.current.work.branch !== observed.branch || state.current.work.head_commit !== observed.head) {
+      throw new WorkflowError({
+        code: ERROR_CODES.ARTIFACT_FAILURE,
+        message: "Final gate evidence does not match recorded Git state.",
+        details: { gate: input.gate, branch: observed.branch, head: observed.head }
+      });
+    }
+    if (input.gate !== "whole-plan" && input.gate !== "ci" && state.current.work.verdicts.whole_plan !== "pass") {
+      throw new WorkflowError({
+        code: ERROR_CODES.ILLEGAL_TRANSITION,
+        message: "Independent final reviews require whole-plan validation PASS.",
+        details: { gate: input.gate }
+      });
+    }
+    if (input.gate === "ci" && allTasksCompleted2 && !(state.current.work.verdicts.nyquist === "pass" && state.current.work.verdicts.spec_integration === "pass" && state.current.work.verdicts.code_review === "pass")) {
+      throw new WorkflowError({
+        code: ERROR_CODES.ILLEGAL_TRANSITION,
+        message: "The CI decision follows all three independent final review passes.",
+        details: { gate: input.gate }
+      });
+    }
+    const key = verdictKey(input.gate);
+    const previous = state.current.work.verdicts[key];
+    const previousEvidence = state.current.work.evidence.find((item) => item.gate === input.gate);
+    if ((previous === "fail" || previous === "block") && (input.verdict === "pass" || input.verdict === "not-required") && previousEvidence?.revision === observed.head) {
+      throw new WorkflowError({
+        code: ERROR_CODES.ARTIFACT_FAILURE,
+        message: "A failing gate cannot become passing on the same revision without a recorded fix commit.",
+        details: { gate: input.gate, revision: observed.head }
+      });
+    }
+    const resetAfterWholePlan = input.gate === "whole-plan";
+    const verdicts = {
+      ...state.current.work.verdicts,
+      ...resetAfterWholePlan ? {
+        nyquist: "pending",
+        spec_integration: "pending",
+        code_review: "pending",
+        ci: "pending"
+      } : {},
+      [key]: input.verdict
+    };
+    const invalidatedGates = resetAfterWholePlan ? FINAL_GATES : [input.gate];
+    return {
+      next_work_number: state.next_work_number,
+      current: {
+        ...state.current,
+        work: {
+          ...state.current.work,
+          verdicts,
+          evidence: [
+            ...state.current.work.evidence.filter((item) => !invalidatedGates.includes(item.gate)),
+            {
+              gate: input.gate,
+              procedure: input.procedure,
+              revision: observed.head,
+              result: input.result,
+              expected: input.expected,
+              source_ids: sourceIds
+            }
+          ]
+        }
+      }
+    };
+  });
+}
+async function completeNtworkPhase(projectRoot, input) {
+  validateSessionId(input.sessionId);
+  const observed = await readGitContext(projectRoot);
+  if (observed.projectDirty) {
+    throw new WorkflowError({
+      code: ERROR_CODES.ARTIFACT_FAILURE,
+      message: "ntwork completion requires a clean project worktree.",
+      details: { branch: observed.branch }
+    });
+  }
+  let runId = "";
+  let recordedTasks = [];
+  return runStateTransaction(projectRoot, (rawState) => {
+    const state = requireWorkState(rawState, "phase complete ntwork");
+    requireActiveOwner(state, input.sessionId, "phase complete ntwork");
+    runId = state.current.run_id;
+    recordedTasks = state.current.work.tasks.map((task) => task.task_id);
+    const work = state.current.work;
+    const gatesPass = work.tasks.every((task) => task.status === "completed") && work.verdicts.whole_plan === "pass" && work.verdicts.nyquist === "pass" && work.verdicts.spec_integration === "pass" && work.verdicts.code_review === "pass" && (work.verdicts.ci === "pass" || work.verdicts.ci === "not-required") && FINAL_GATES.every((gate) => work.evidence.some((item) => item.gate === gate && item.revision === observed.head));
+    if (!gatesPass) {
+      throw new WorkflowError({
+        code: ERROR_CODES.ARTIFACT_FAILURE,
+        message: "ntwork completion requires every task and current-revision final gate to pass.",
+        details: { revision: observed.head }
+      });
+    }
+    if (work.branch !== observed.branch || work.head_commit !== observed.head) {
+      throw new WorkflowError({
+        code: ERROR_CODES.ARTIFACT_FAILURE,
+        message: "The final Git context does not match recorded ntwork state.",
+        details: { branch: observed.branch, head: observed.head }
+      });
+    }
+    return {
+      next_work_number: state.next_work_number,
+      current: {
+        ...state.current,
+        lifecycle: "delivery-ready",
+        phase: "delivery-ready",
+        owner: null,
+        blocker: null
+      }
+    };
+  }, {
+    prepareCommit: async () => {
+      await validateBrief(projectRoot, runId, "ntgrill");
+      requireMatchingTaskOrder(recordedTasks, await validatePlanArtifacts(projectRoot, runId));
+      const current = await readGitContext(projectRoot);
+      if (current.branch !== observed.branch || current.head !== observed.head || current.projectDirty) {
+        throw new WorkflowError({
+          code: ERROR_CODES.ARTIFACT_FAILURE,
+          message: "The Git context changed during ntwork completion.",
+          details: { branch: current.branch, head: current.head }
+        });
+      }
+    }
+  });
+}
+async function recordFixCommit(projectRoot, input) {
+  validateSessionId(input.sessionId);
+  requireText(input.commitId, "commit-id");
+  requireText(input.scope, "scope");
+  for (const [field2, value] of [
+    ["procedure", input.procedure],
+    ["result", input.result],
+    ["expected", input.expected]
+  ]) requireText(value, field2);
+  const sourceIds = validateSourceIds(input.sourceIds);
+  const observed = await readGitContext(projectRoot);
+  if (observed.projectDirty || observed.head !== input.commitId) {
+    throw new WorkflowError({
+      code: ERROR_CODES.ARTIFACT_FAILURE,
+      message: "A fix record requires the supplied current commit and a clean project worktree.",
+      details: { supplied_commit: input.commitId, actual_head: observed.head }
+    });
+  }
+  const parent = await readCommitParent(projectRoot, input.commitId);
+  return runStateTransaction(projectRoot, (rawState) => {
+    const state = requireWorkState(rawState, "work record fix-commit");
+    requireActiveOwner(state, input.sessionId, "work record fix-commit");
+    if (state.current.work.tasks.some((task) => task.status === "active")) {
+      throw new WorkflowError({
+        code: ERROR_CODES.ILLEGAL_TRANSITION,
+        message: "Fix work cannot be recorded in parallel with an active task.",
+        details: null
+      });
+    }
+    if (state.current.work.branch !== observed.branch || state.current.work.head_commit === null || parent !== state.current.work.head_commit) {
+      throw new WorkflowError({
+        code: ERROR_CODES.ARTIFACT_FAILURE,
+        message: "A fix commit must be one direct commit after the recorded ntwork HEAD.",
+        details: { recorded_head: state.current.work.head_commit, commit_parent: parent }
+      });
+    }
+    const requiredGates = [`fix:${input.scope}`, `fix-review:${input.scope}`];
+    if (!requiredGates.every((gate) => state.current.work.evidence.some((item) => item.gate === gate && item.revision === `worktree@${parent}` && (gate.startsWith("fix-review:") ? item.result === "packet=pass; quality=pass" : true)))) {
+      throw new WorkflowError({
+        code: ERROR_CODES.ARTIFACT_FAILURE,
+        message: "A fix commit requires fresh passing verification and independent review of the same tree.",
+        details: { scope: input.scope }
+      });
+    }
+    return {
+      next_work_number: state.next_work_number,
+      current: {
+        ...state.current,
+        work: {
+          ...state.current.work,
+          head_commit: input.commitId,
+          fix_commits: [...state.current.work.fix_commits, input.commitId],
+          evidence: [
+            ...state.current.work.evidence.filter((item) => !FINAL_GATES.includes(item.gate)).map((item) => requiredGates.includes(item.gate) ? { ...item, revision: input.commitId } : item),
+            {
+              gate: `fix-commit:${input.commitId}`,
+              procedure: input.procedure,
+              revision: input.commitId,
+              result: input.result,
+              expected: input.expected,
+              source_ids: sourceIds
+            }
+          ],
+          verdicts: {
+            whole_plan: "pending",
+            nyquist: "pending",
+            spec_integration: "pending",
+            code_review: "pending",
+            ci: "pending"
+          }
+        }
+      }
+    };
+  });
+}
+async function recordPullRequest(projectRoot, input) {
+  validateSessionId(input.sessionId);
+  requireText(input.id, "id");
+  requireText(input.url, "url");
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(input.url);
+  } catch {
+    throw new WorkflowError({
+      code: ERROR_CODES.INVALID_INPUT,
+      message: "The pull-request URL must be an absolute HTTP(S) URL.",
+      details: { argument: "--url" }
+    });
+  }
+  if (parsedUrl.protocol !== "https:" && parsedUrl.protocol !== "http:") {
+    throw new WorkflowError({
+      code: ERROR_CODES.INVALID_INPUT,
+      message: "The pull-request URL must be an absolute HTTP(S) URL.",
+      details: { argument: "--url" }
+    });
+  }
+  const observed = await readGitContext(projectRoot);
+  return runStateTransaction(projectRoot, (rawState) => {
+    const state = requireWorkState(rawState, "work record pull-request");
+    requireActiveOwner(state, input.sessionId, "work record pull-request");
+    if (state.current.work.branch !== observed.branch || state.current.work.head_commit !== observed.head || observed.projectDirty) {
+      throw new WorkflowError({
+        code: ERROR_CODES.ARTIFACT_FAILURE,
+        message: "Pull-request identity requires the clean recorded Git revision.",
+        details: { branch: observed.branch, head: observed.head }
+      });
+    }
+    const recorded = state.current.work.pull_request;
+    if (recorded !== null && (recorded.id !== input.id || recorded.url !== input.url)) {
+      throw new WorkflowError({
+        code: ERROR_CODES.ARTIFACT_FAILURE,
+        message: "The pull-request identity does not match recorded ntwork state.",
+        details: { recorded_id: recorded.id, supplied_id: input.id }
+      });
+    }
+    return {
+      next_work_number: state.next_work_number,
+      current: {
+        ...state.current,
+        work: {
+          ...state.current.work,
+          pull_request: recorded ?? { id: input.id, url: input.url }
+        }
+      }
+    };
+  });
+}
+
+// src/cli/arguments.ts
+function invalidArguments(message, details) {
+  throw new WorkflowError({
+    code: ERROR_CODES.INVALID_INPUT,
+    message,
+    details
+  });
+}
+function requireSessionId(argv) {
+  if (argv[5] !== "--session-id" || argv[6] === void 0 || argv[6].length === 0) {
+    invalidArguments("Expected --session-id <provider:id>.", {
+      argument: argv[5] ?? ""
+    });
+  }
+  return argv[6];
+}
+function parseInterruption(value) {
+  if (!isInterruptionAuthority(value)) {
+    invalidArguments("Invalid --interruption authority.", {
+      value: value ?? ""
+    });
+  }
+  return value;
+}
+function parseRunArguments(cwd, argv) {
+  const operation = argv[3];
+  if (operation !== "start" && operation !== "cancel" && operation !== "complete") {
+    invalidArguments("Unknown run operation.", { operation: operation ?? "" });
+  }
+  if (argv[4] !== "--session-id" || argv[5] === void 0 || argv[5].length === 0) {
+    invalidArguments("Expected --session-id <provider:id>.", {
+      argument: argv[4] ?? ""
+    });
+  }
+  const needsConfirmation = operation !== "start";
+  const expectedLength = needsConfirmation ? 7 : 6;
+  if (needsConfirmation && argv[6] !== "--user-confirmed") {
+    invalidArguments(`${operation} requires --user-confirmed.`, {
+      argument: argv[6] ?? ""
+    });
+  }
+  if (argv.length !== expectedLength) {
+    invalidArguments("Unexpected run command argument.", {
+      argument: argv[expectedLength] ?? ""
+    });
+  }
+  return Object.freeze({
+    cwd,
+    command: "run",
+    operation,
+    sessionId: argv[5],
+    userConfirmed: needsConfirmation
+  });
+}
+function phaseBase(cwd, sessionId, phase) {
+  return { cwd, command: "phase", phase, sessionId };
+}
+function parsePhaseBegin(cwd, sessionId, options, phase) {
+  if (phase === "ntplan" && options.some((option) => option === "--researcher-available" || option === "--critic-available")) {
+    const roleFlags = options.filter((option) => option === "--researcher-available" || option === "--critic-available");
+    if (new Set(roleFlags).size !== roleFlags.length) invalidArguments("Duplicate native role flag.", { argument: roleFlags[0] ?? "" });
+    return Object.freeze({
+      ...parsePhaseBegin(cwd, sessionId, options.filter((option) => !roleFlags.includes(option)), phase),
+      researcherAvailable: roleFlags.includes("--researcher-available"),
+      criticAvailable: roleFlags.includes("--critic-available")
+    });
+  }
+  if (phase === "ntwork" && options.some((option) => option.endsWith("-available"))) {
+    const allowed = new Set(NTWORK_ROLES.map((role) => `--${role}-available`));
+    const roleFlags = options.filter((option) => option.endsWith("-available"));
+    const unknown = roleFlags.find((flag) => !allowed.has(flag));
+    if (unknown !== void 0) invalidArguments("Unknown native ntwork role flag.", { argument: unknown });
+    if (new Set(roleFlags).size !== roleFlags.length) invalidArguments("Duplicate native role flag.", { argument: roleFlags[0] ?? "" });
+    const parsed = parsePhaseBegin(cwd, sessionId, options.filter((option) => !roleFlags.includes(option)), phase);
+    return Object.freeze({
+      ...parsed,
+      availableWorkRoles: new Set(roleFlags.map((flag) => flag.slice(2, -10)))
+    });
+  }
+  if (phase === "ntwork" && options.includes("--existing-changes-confirmed")) {
+    if (options.filter((option) => option === "--existing-changes-confirmed").length !== 1) {
+      invalidArguments("Duplicate existing-changes confirmation.", { argument: "--existing-changes-confirmed" });
+    }
+    return Object.freeze({
+      ...parsePhaseBegin(cwd, sessionId, options.filter((option) => option !== "--existing-changes-confirmed"), phase),
+      existingChangesConfirmed: true
+    });
+  }
+  if (phase === "ntwork" && options.includes("--base-branch")) {
+    const index = options.indexOf("--base-branch");
+    const value = options[index + 1];
+    if (options.filter((option) => option === "--base-branch").length !== 1 || value === void 0 || value.trim().length === 0) invalidArguments("Expected one --base-branch <branch>.", { argument: value ?? "" });
+    return Object.freeze({
+      ...parsePhaseBegin(cwd, sessionId, [
+        ...options.slice(0, index),
+        ...options.slice(index + 2)
+      ], phase),
+      baseBranch: value
+    });
+  }
+  if (options.length === 0) {
+    return Object.freeze({
+      ...phaseBase(cwd, sessionId, phase),
+      operation: "begin",
+      blockerResolved: false
+    });
+  }
+  if (options.length === 1 && options[0] === "--blocker-resolved") {
+    return Object.freeze({
+      ...phaseBase(cwd, sessionId, phase),
+      operation: "begin",
+      blockerResolved: true
+    });
+  }
+  if ((options.length === 2 || options.length === 3) && options[0] === "--interruption" && (options.length === 2 || options[2] === "--blocker-resolved")) {
+    return Object.freeze({
+      ...phaseBase(cwd, sessionId, phase),
+      operation: "begin",
+      interruption: parseInterruption(options[1]),
+      blockerResolved: options.length === 3
+    });
+  }
+  invalidArguments("Unexpected phase begin argument.", {
+    argument: options[0] ?? ""
+  });
+}
+function parsePhaseStop(cwd, sessionId, options, phase) {
+  const blocker = options[1];
+  if (options[0] !== "--blocker" || blocker === void 0 || blocker.trim().length === 0) {
+    invalidArguments("Expected --blocker <non-empty-text>.", {
+      argument: options[0] ?? ""
+    });
+  }
+  if (options.length === 2) {
+    return Object.freeze({
+      ...phaseBase(cwd, sessionId, phase),
+      operation: "stop",
+      blocker
+    });
+  }
+  if (options.length === 4 && options[2] === "--interruption") {
+    return Object.freeze({
+      ...phaseBase(cwd, sessionId, phase),
+      operation: "stop",
+      blocker,
+      interruption: parseInterruption(options[3])
+    });
+  }
+  invalidArguments("Unexpected phase stop argument.", {
+    argument: options[2] ?? ""
+  });
+}
+function parsePhaseArguments(cwd, argv) {
+  const operation = argv[3];
+  if (operation !== "begin" && operation !== "complete" && operation !== "stop") {
+    invalidArguments("Unknown phase operation.", { operation: operation ?? "" });
+  }
+  if (argv[4] !== "nttask" && argv[4] !== "ntgrill" && argv[4] !== "ntplan" && argv[4] !== "ntwork") {
+    invalidArguments("Unknown phase.", { phase: argv[4] ?? "" });
+  }
+  const phase = argv[4];
+  const sessionId = requireSessionId(argv);
+  const options = argv.slice(7);
+  if (operation === "begin") return parsePhaseBegin(cwd, sessionId, options, phase);
+  if (operation === "stop") return parsePhaseStop(cwd, sessionId, options, phase);
+  if (phase === "ntplan") {
+    if (options.length !== 2 || options[0] !== "--critic-pass" || options[1] !== "--user-confirmed") {
+      invalidArguments("ntplan completion requires --critic-pass --user-confirmed.", { argument: options[0] ?? "" });
+    }
+    return Object.freeze({ ...phaseBase(cwd, sessionId, phase), operation: "complete", criticPassed: true, userConfirmed: true });
+  }
+  if (phase === "ntgrill") {
+    if (options.length !== 1 || options[0] !== "--user-confirmed") {
+      invalidArguments("ntgrill completion requires --user-confirmed.", { argument: options[0] ?? "" });
+    }
+    return Object.freeze({ ...phaseBase(cwd, sessionId, phase), operation: "complete", userConfirmed: true });
+  }
+  if (options.length !== 0) {
+    invalidArguments("The phase complete command accepts no extra arguments.", {
+      argument: options[0] ?? ""
+    });
+  }
+  return Object.freeze({
+    ...phaseBase(cwd, sessionId, phase),
+    operation: "complete"
+  });
+}
+function operationForArguments(argv) {
+  if (argv[0] !== "--cwd" || argv[1] === void 0 || argv[1].length === 0) {
+    return "unknown";
+  }
+  if (argv[2] === "run" && (argv[3] === "start" || argv[3] === "cancel" || argv[3] === "complete")) {
+    return `run ${argv[3]}`;
+  }
+  if (argv[2] === "phase" && (argv[3] === "begin" || argv[3] === "complete" || argv[3] === "stop") && (argv[4] === "nttask" || argv[4] === "ntgrill" || argv[4] === "ntplan" || argv[4] === "ntwork")) {
+    return `phase ${argv[3]} ${argv[4]}`;
+  }
+  if (argv[2] === "plan" && (argv[3] === "validate" || argv[3] === "amend")) return `plan ${argv[3]}`;
+  if (argv[2] === "task" && argv[3] === "begin") return "task begin";
+  if (argv[2] === "task" && argv[3] === "complete") return "task complete";
+  if (argv[2] === "work" && argv[3] === "record" && argv[4]) return `work record ${argv[4]}`;
+  return argv[2] ?? "unknown";
+}
+function parseArguments(argv) {
+  if (argv[0] !== "--cwd" || argv[1] === void 0 || argv[1].length === 0) {
+    invalidArguments("Expected --cwd <path> before the command.", {
+      argument: argv[0] ?? ""
+    });
+  }
+  const command = argv[2];
+  if (command === "status") {
+    if (argv.length !== 3) {
+      invalidArguments("The status command accepts no arguments.", {
+        argument: argv[3] ?? ""
+      });
+    }
+    return Object.freeze({ cwd: argv[1], command });
+  }
+  if (command === "run") return parseRunArguments(argv[1], argv);
+  if (command === "phase") return parsePhaseArguments(argv[1], argv);
+  if (command === "task") {
+    if (argv[3] !== "begin" && argv[3] !== "complete" || !argv[4] || argv[5] !== "--session-id" || !argv[6]) {
+      invalidArguments("Expected task begin|complete <task-id> --session-id <provider:id>.", {
+        argument: argv[3] ?? ""
+      });
+    }
+    if (argv[3] === "complete") {
+      if (argv.length !== 9 || argv[7] !== "--commit-id" || !argv[8]) {
+        invalidArguments("task complete requires --commit-id <git-commit>.", {
+          argument: argv[7] ?? ""
+        });
+      }
+      return Object.freeze({
+        cwd: argv[1],
+        command,
+        operation: "complete",
+        taskId: argv[4],
+        sessionId: argv[6],
+        commitId: argv[8]
+      });
+    }
+    if (argv.length !== 7 && !(argv.length === 8 && argv[7] === "--existing-changes-confirmed")) {
+      invalidArguments("Unexpected task begin argument.", { argument: argv[7] ?? "" });
+    }
+    return Object.freeze({
+      cwd: argv[1],
+      command,
+      operation: "begin",
+      taskId: argv[4],
+      sessionId: argv[6],
+      existingChangesConfirmed: argv[7] === "--existing-changes-confirmed"
+    });
+  }
+  if (command === "work") {
+    if (argv[3] !== "record") {
+      invalidArguments("Expected work record operation.", { argument: argv[3] ?? "" });
+    }
+    if (argv[4] === "evidence") {
+      if (argv.length !== 17 || argv[5] !== "--session-id" || !argv[6] || argv[7] !== "--gate" || !argv[8] || argv[9] !== "--procedure" || !argv[10] || argv[11] !== "--result" || !argv[12] || argv[13] !== "--expected" || !argv[14] || argv[15] !== "--source-id" || !argv[16]) invalidArguments("Invalid work evidence arguments.", { argument: argv[5] ?? "" });
+      return Object.freeze({
+        cwd: argv[1],
+        command,
+        operation: "record",
+        record: "evidence",
+        sessionId: argv[6],
+        gate: argv[8],
+        procedure: argv[10],
+        result: argv[12],
+        expected: argv[14],
+        sourceIds: argv[16].split(",").map((id) => id.trim())
+      });
+    }
+    if (argv[4] === "task-review") {
+      if (argv.length !== 14 || !argv[5] || argv[6] !== "--session-id" || !argv[7] || argv[8] !== "--packet" || argv[9] !== "pass" && argv[9] !== "block" || argv[10] !== "--quality" || argv[11] !== "pass" && argv[11] !== "block" || argv[12] !== "--source-id" || !argv[13]) invalidArguments("Invalid work task-review arguments.", { argument: argv[5] ?? "" });
+      return Object.freeze({
+        cwd: argv[1],
+        command,
+        operation: "record",
+        record: "task-review",
+        taskId: argv[5],
+        sessionId: argv[7],
+        packet: argv[9],
+        quality: argv[11],
+        sourceIds: argv[13].split(",").map((id) => id.trim())
+      });
+    }
+    if (argv[4] === "gate") {
+      const gate = argv[5];
+      const verdict = argv[9];
+      if (argv.length !== 18 || !["whole-plan", "nyquist", "spec-integration", "code-review", "ci"].includes(gate ?? "") || argv[6] !== "--session-id" || !argv[7] || argv[8] !== "--verdict" || !["pass", "fail", "block", "not-required"].includes(verdict ?? "") || argv[10] !== "--procedure" || !argv[11] || argv[12] !== "--result" || !argv[13] || argv[14] !== "--expected" || !argv[15] || argv[16] !== "--source-id" || !argv[17]) invalidArguments("Invalid work gate arguments.", { argument: argv[5] ?? "" });
+      return Object.freeze({
+        cwd: argv[1],
+        command,
+        operation: "record",
+        record: "gate",
+        gate,
+        sessionId: argv[7],
+        verdict,
+        procedure: argv[11],
+        result: argv[13],
+        expected: argv[15],
+        sourceIds: argv[17].split(",").map((id) => id.trim())
+      });
+    }
+    if (argv[4] === "fix-commit") {
+      if (argv.length !== 19 || argv[5] !== "--session-id" || !argv[6] || argv[7] !== "--scope" || !argv[8] || argv[9] !== "--commit-id" || !argv[10] || argv[11] !== "--procedure" || !argv[12] || argv[13] !== "--result" || !argv[14] || argv[15] !== "--expected" || !argv[16] || argv[17] !== "--source-id" || !argv[18]) invalidArguments("Invalid work fix-commit arguments.", { argument: argv[5] ?? "" });
+      return Object.freeze({
+        cwd: argv[1],
+        command,
+        operation: "record",
+        record: "fix-commit",
+        sessionId: argv[6],
+        scope: argv[8],
+        commitId: argv[10],
+        procedure: argv[12],
+        result: argv[14],
+        expected: argv[16],
+        sourceIds: argv[18].split(",").map((id) => id.trim())
+      });
+    }
+    if (argv[4] === "pull-request") {
+      if (argv.length !== 11 || argv[5] !== "--session-id" || !argv[6] || argv[7] !== "--id" || !argv[8] || argv[9] !== "--url" || !argv[10]) invalidArguments("Invalid work pull-request arguments.", { argument: argv[5] ?? "" });
+      return Object.freeze({
+        cwd: argv[1],
+        command,
+        operation: "record",
+        record: "pull-request",
+        sessionId: argv[6],
+        id: argv[8],
+        url: argv[10]
+      });
+    }
+    invalidArguments("Unknown work record operation.", { operation: argv[4] ?? "" });
+  }
+  if (command === "plan") {
+    if (argv[3] === "validate" && argv.length === 6 && argv[4] === "--session-id" && argv[5]) {
+      return Object.freeze({ cwd: argv[1], command, operation: "validate", sessionId: argv[5] });
+    }
+    if (argv[3] === "validate" && argv.length === 7 && argv[4] === "--session-id" && argv[5] && argv[6] === "--amendment-recovery") {
+      return Object.freeze({
+        cwd: argv[1],
+        command,
+        operation: "validate",
+        sessionId: argv[5],
+        amendmentRecovery: true
+      });
+    }
+    if (argv[3] === "validate" && (argv.length === 8 || argv.length === 9) && argv[4] === "--session-id" && argv[5] && argv[6] === "--critic-pass" && argv[7] === "--user-confirmed" && (argv.length === 8 || argv[8] === "--amendment-recovery")) {
+      return Object.freeze({
+        cwd: argv[1],
+        command,
+        operation: "validate",
+        sessionId: argv[5],
+        criticPassed: true,
+        userConfirmed: true,
+        ...argv[8] === "--amendment-recovery" ? { amendmentRecovery: true } : {}
+      });
+    }
+    invalidArguments("Expected plan validate, optionally with critic PASS and user confirmation.", { argument: argv[3] ?? "" });
+  }
+  invalidArguments("Unknown command.", { command: command ?? "" });
+}
+
+// src/core/protocol.ts
+function createSuccessResponse(context) {
+  return {
+    ok: true,
+    operation: context.operation,
+    project_root: context.projectRoot,
+    state: context.state,
+    next_action: context.nextAction,
+    warnings: context.warnings
+  };
+}
+function createFailureResponse(context) {
+  const error = normalizeCaughtError(context.error);
+  return {
+    ok: false,
+    operation: context.operation,
+    project_root: context.projectRoot,
+    state: context.state,
+    next_action: context.nextAction,
+    warnings: context.warnings,
+    error: {
+      code: error.code,
+      exit_code: error.exitCode,
+      message: error.message,
+      details: error.details
+    }
+  };
+}
+function serializeResponse(response) {
+  return JSON.stringify(response) + "\n";
+}
+
+// src/runtime/ntgrill.ts
+async function completeNtgrillPhase(projectRoot, input, options = {}) {
+  validateSessionId(input.sessionId);
+  if (input.userConfirmed !== true) {
+    throw new WorkflowError({
+      code: ERROR_CODES.INVALID_INPUT,
+      message: "ntgrill completion requires explicit user confirmation of shared understanding.",
+      details: { argument: "--user-confirmed" }
+    });
+  }
+  let runId;
+  return runStateTransaction(projectRoot, (state) => {
+    requireActivePhase(state, "phase complete ntgrill", "ntgrill");
+    requireOwner(state, input.sessionId);
+    runId = state.current.run_id;
+    return {
+      next_work_number: state.next_work_number,
+      current: {
+        run_id: runId,
+        lifecycle: "plan-ready",
+        phase: null,
+        owner: null,
+        blocker: null,
+        work: null
+      }
+    };
+  }, {
+    ...options,
+    prepareCommit: () => validateBrief(projectRoot, runId, "ntgrill")
+  });
+}
+
+// src/runtime/nttask.ts
+async function completeNttaskPhase(projectRoot, input) {
+  validateSessionId(input.sessionId);
+  let runId;
+  return runStateTransaction(projectRoot, (state) => {
+    requireActivePhase(state, "phase complete nttask", "nttask");
+    requireOwner(state, input.sessionId);
+    runId = state.current.run_id;
+    return {
+      next_work_number: state.next_work_number,
+      current: {
+        run_id: runId,
+        lifecycle: "brief-ready",
+        phase: null,
+        owner: null,
+        blocker: null,
+        work: null
+      }
+    };
+  }, {
+    prepareCommit: () => validateNttaskBrief(projectRoot, runId)
+  });
+}
+
 // src/runtime/ntplan.ts
-async function validatePlan(projectRoot, sessionId) {
+async function validatePlan(projectRoot, sessionId, amendmentRecovery = false) {
   validateSessionId(sessionId);
   const { state } = await readPreflight(projectRoot);
   let runId;
   if (state?.current?.lifecycle === "plan-approved") {
+    runId = state.current.run_id;
+  } else if (state?.current?.lifecycle === "work-active" && state.current.phase === "ntwork" && state.current.owner?.session_id === sessionId) {
+    runId = state.current.run_id;
+  } else if (amendmentRecovery && state?.current?.lifecycle === "work-active" && state.current.phase === null && state.current.owner === null && state.current.work !== null && state.current.blocker !== null) {
     runId = state.current.run_id;
   } else {
     requireActivePhase(state, "plan validate", "ntplan");
@@ -1587,6 +2564,117 @@ async function validatePlan(projectRoot, sessionId) {
   await validateBrief(projectRoot, runId, "ntgrill");
   await validatePlanArtifacts(projectRoot, runId);
   return { state, warnings: [] };
+}
+async function amendWorkPlan(projectRoot, input) {
+  validateSessionId(input.sessionId);
+  if (!input.criticPassed || !input.userConfirmed) {
+    throw new WorkflowError({
+      code: ERROR_CODES.INVALID_INPUT,
+      message: "A work amendment requires current critic PASS and explicit user reapproval.",
+      details: { arguments: ["--critic-pass", "--user-confirmed"] }
+    });
+  }
+  const observed = await readGitContext(projectRoot);
+  return runStateTransaction(projectRoot, async (state) => {
+    if (state?.current?.lifecycle !== "work-active") {
+      throw new WorkflowError({
+        code: ERROR_CODES.ILLEGAL_TRANSITION,
+        message: "Approved amendment validation is legal only for active ntwork.",
+        details: { actual_lifecycle: state?.current?.lifecycle ?? null }
+      });
+    }
+    const current = state.current;
+    if (current.work === null) {
+      throw new WorkflowError({
+        code: ERROR_CODES.ILLEGAL_TRANSITION,
+        message: "Approved amendment validation requires ntwork state.",
+        details: { actual_lifecycle: current.lifecycle }
+      });
+    }
+    const work = current.work;
+    const ownedActive = current.phase === "ntwork" && current.owner !== null;
+    const stoppedRecovery = input.amendmentRecovery && current.phase === null && current.owner === null && current.blocker !== null;
+    if (!ownedActive && !stoppedRecovery) {
+      throw new WorkflowError({
+        code: ERROR_CODES.ILLEGAL_TRANSITION,
+        message: "Approved amendment validation is legal only for owned active ntwork.",
+        details: { actual_lifecycle: current.lifecycle }
+      });
+    }
+    if (ownedActive && current.owner?.session_id !== input.sessionId) {
+      throw new WorkflowError({
+        code: ERROR_CODES.OWNERSHIP_CONFLICT,
+        message: "An ntwork owner is already recorded.",
+        details: {
+          recorded_owner: current.owner?.session_id ?? null,
+          requested_owner: input.sessionId
+        }
+      });
+    }
+    const provider = providerForSessionId(input.sessionId);
+    if (stoppedRecovery && work.provider !== provider) {
+      throw new WorkflowError({
+        code: ERROR_CODES.OWNERSHIP_CONFLICT,
+        message: "An interrupted ntwork amendment must restart under the recorded provider.",
+        details: { recorded_provider: work.provider, requested_provider: provider }
+      });
+    }
+    if (work.branch !== observed.branch || work.head_commit !== observed.head) {
+      throw new WorkflowError({
+        code: ERROR_CODES.ARTIFACT_FAILURE,
+        message: "Amendment validation requires the recorded ntwork Git boundary.",
+        details: {
+          recorded_branch: work.branch,
+          actual_branch: observed.branch,
+          recorded_head: work.head_commit,
+          actual_head: observed.head
+        }
+      });
+    }
+    await validateBrief(projectRoot, current.run_id, "ntgrill");
+    const taskIds = await validatePlanArtifacts(projectRoot, current.run_id);
+    const completed = work.tasks.filter((task) => task.status === "completed");
+    if (!completed.every((task, index) => task.task_id === taskIds[index])) {
+      throw new WorkflowError({
+        code: ERROR_CODES.ARTIFACT_FAILURE,
+        message: "A reapproved work amendment must preserve the completed task prefix.",
+        details: { completed_tasks: completed.map((task) => task.task_id) }
+      });
+    }
+    const completedIds = new Set(completed.map((task) => task.task_id));
+    return {
+      next_work_number: state.next_work_number,
+      current: {
+        ...current,
+        phase: "ntwork",
+        owner: { session_id: input.sessionId },
+        blocker: null,
+        work: {
+          ...work,
+          provider: work.provider,
+          tasks: taskIds.map((taskId) => {
+            const historical = completed.find((task) => task.task_id === taskId);
+            return historical ?? {
+              task_id: taskId,
+              status: "pending",
+              start_commit: null,
+              commit_id: null,
+              packet_review: "pending",
+              quality_review: "pending"
+            };
+          }),
+          evidence: work.evidence.filter((item) => (!item.gate.startsWith("task:") || completedIds.has(item.gate.slice(5))) && (!item.gate.startsWith("task-review:") || completedIds.has(item.gate.slice(12))) && !["whole-plan", "nyquist", "spec-integration", "code-review", "ci"].includes(item.gate)),
+          verdicts: {
+            whole_plan: "pending",
+            nyquist: "pending",
+            spec_integration: "pending",
+            code_review: "pending",
+            ci: "pending"
+          }
+        }
+      }
+    };
+  });
 }
 async function completeNtplanPhase(projectRoot, input, options = {}) {
   validateSessionId(input.sessionId);
@@ -1910,12 +2998,25 @@ async function executeRun(parsed) {
 async function executePhase(parsed) {
   const projectRoot = await resolveProjectRoot(parsed.cwd);
   if (parsed.operation === "complete") {
+    if (parsed.phase === "ntwork") {
+      return {
+        projectRoot,
+        ...await completeNtworkPhase(projectRoot, { sessionId: parsed.sessionId })
+      };
+    }
     const result2 = parsed.phase === "ntplan" ? await completeNtplanPhase(projectRoot, { sessionId: parsed.sessionId, criticPassed: parsed.criticPassed === true, userConfirmed: parsed.userConfirmed === true }) : parsed.phase === "ntgrill" ? await completeNtgrillPhase(projectRoot, { sessionId: parsed.sessionId, userConfirmed: parsed.userConfirmed === true }) : await completeNttaskPhase(projectRoot, { sessionId: parsed.sessionId });
     return { projectRoot, ...result2 };
   }
   const interruption = parsed.interruption === void 0 ? {} : { interruption: parsed.interruption };
   if (parsed.operation === "begin") {
-    const result2 = await beginPhase(projectRoot, parsed.phase, {
+    const result2 = parsed.phase === "ntwork" ? await beginNtworkPhase(projectRoot, {
+      sessionId: parsed.sessionId,
+      blockerResolved: parsed.blockerResolved,
+      availableRoles: parsed.availableWorkRoles ?? /* @__PURE__ */ new Set(),
+      existingChangesConfirmed: parsed.existingChangesConfirmed === true,
+      ...parsed.baseBranch === void 0 ? {} : { baseBranch: parsed.baseBranch },
+      ...interruption
+    }) : await beginPhase(projectRoot, parsed.phase, {
       sessionId: parsed.sessionId,
       blockerResolved: parsed.blockerResolved,
       ...parsed.phase === "ntplan" ? {
@@ -1926,11 +3027,33 @@ async function executePhase(parsed) {
     });
     return { projectRoot, ...result2 };
   }
-  const result = await stopPhase(projectRoot, parsed.phase, {
+  const stopInput = {
     sessionId: parsed.sessionId,
     blocker: parsed.blocker,
     ...interruption
+  };
+  const result = parsed.phase === "ntwork" ? await stopNtworkPhase(projectRoot, stopInput) : await stopPhase(projectRoot, parsed.phase, stopInput);
+  return { projectRoot, ...result };
+}
+async function executeTask(parsed) {
+  const projectRoot = await resolveProjectRoot(parsed.cwd);
+  const operation = parsed.operation === "begin" ? beginWorkTask(projectRoot, {
+    sessionId: parsed.sessionId,
+    taskId: parsed.taskId,
+    existingChangesConfirmed: parsed.existingChangesConfirmed
+  }) : completeWorkTask(projectRoot, {
+    sessionId: parsed.sessionId,
+    taskId: parsed.taskId,
+    commitId: parsed.commitId
   });
+  return {
+    projectRoot,
+    ...await operation
+  };
+}
+async function executeWork(parsed) {
+  const projectRoot = await resolveProjectRoot(parsed.cwd);
+  const result = parsed.record === "evidence" ? await recordTaskEvidence(projectRoot, parsed) : parsed.record === "task-review" ? await recordTaskReview(projectRoot, parsed) : parsed.record === "gate" ? await recordFinalGate(projectRoot, parsed) : parsed.record === "fix-commit" ? await recordFixCommit(projectRoot, parsed) : await recordPullRequest(projectRoot, parsed);
   return { projectRoot, ...result };
 }
 async function executeCommand(parsed) {
@@ -1938,20 +3061,39 @@ async function executeCommand(parsed) {
   if (parsed.command === "run") return executeRun(parsed);
   if (parsed.command === "plan") {
     const projectRoot = await resolveProjectRoot(parsed.cwd);
-    return { projectRoot, ...await validatePlan(projectRoot, parsed.sessionId) };
+    return {
+      projectRoot,
+      ...await (parsed.criticPassed === true && parsed.userConfirmed === true ? amendWorkPlan(projectRoot, {
+        sessionId: parsed.sessionId,
+        criticPassed: true,
+        userConfirmed: true,
+        amendmentRecovery: parsed.amendmentRecovery === true
+      }) : validatePlan(projectRoot, parsed.sessionId, parsed.amendmentRecovery === true))
+    };
   }
+  if (parsed.command === "task") return executeTask(parsed);
+  if (parsed.command === "work") return executeWork(parsed);
   return executePhase(parsed);
 }
 function operationForCommand(parsed) {
   if (parsed.command === "status") return "status";
   if (parsed.command === "run") return `run ${parsed.operation}`;
-  if (parsed.command === "plan") return "plan validate";
+  if (parsed.command === "plan") return `plan ${parsed.operation}`;
+  if (parsed.command === "task") return `task ${parsed.operation}`;
+  if (parsed.command === "work") return `work record ${parsed.record}`;
   return `phase ${parsed.operation} ${parsed.phase}`;
 }
 function failureAction(parsed, error, state) {
   if (parsed.command === "status") return STATUS_FAILURE_ACTION;
   if (parsed.command === "run") {
     return error instanceof WorkflowError && error.code === ERROR_CODES.ILLEGAL_TRANSITION ? nextActionFor(state) : RUN_FAILURE_ACTION;
+  }
+  if (parsed.command === "task" || parsed.command === "work") {
+    if (error instanceof WorkflowError) {
+      if (error.code === ERROR_CODES.OWNERSHIP_CONFLICT) return ownerAction("ntwork", false);
+      if (error.code === ERROR_CODES.ILLEGAL_TRANSITION) return nextActionFor(state);
+    }
+    return phaseFailureAction("ntwork");
   }
   const phase = parsed.command === "plan" ? "ntplan" : parsed.phase;
   if (!(error instanceof WorkflowError)) return phaseFailureAction(phase);

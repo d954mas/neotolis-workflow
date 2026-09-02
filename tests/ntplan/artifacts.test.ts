@@ -38,7 +38,7 @@ test('complete planning artifacts derive stable task order without changing file
     for (const [file, change] of cases) {
       const path = join(run, file);
       const original = readFileSync(path);
-      writeFileSync(path, change(original.toString()));
+      writeFileSync(path, change(original.toString().replaceAll('\r\n', '\n')));
       const invalid = tree(root);
       await assert.rejects(validatePlanArtifacts(root, 'NT-001'), { code: 'ARTIFACT_FAILURE' }, file);
       assert.deepEqual(tree(root), invalid);

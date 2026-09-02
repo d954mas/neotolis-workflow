@@ -13,11 +13,16 @@ function filesUnder(root: string, directory = root): string[] {
   return files.sort();
 }
 
-test('Claude plugin contains the three implemented skills, planning roles, license, identity hook, and runtime', () => {
+test('Claude plugin contains four implemented skills, required native roles, identity hook, and runtime', () => {
   assert.deepEqual(filesUnder(resolve('plugins/claude-code')), [
     '.claude-plugin/plugin.json',
     'agents/ntplan-critic.md',
     'agents/ntplan-researcher.md',
+    'agents/ntwork-code-reviewer.md',
+    'agents/ntwork-implementer.md',
+    'agents/ntwork-nyquist-auditor.md',
+    'agents/ntwork-spec-integration-reviewer.md',
+    'agents/ntwork-task-reviewer.md',
     'hooks/hooks.json',
     'runtime/ntworkflow.mjs',
     'runtime/session-start.mjs',
@@ -25,6 +30,7 @@ test('Claude plugin contains the three implemented skills, planning roles, licen
     'skills/ntgrill/SKILL.md',
     'skills/ntplan/SKILL.md',
     'skills/nttask/SKILL.md',
+    'skills/ntwork/SKILL.md',
   ]);
 });
 
@@ -36,7 +42,7 @@ test('Claude manifests expose the local namespaced workflow plugin', () => {
   assert.deepEqual(plugin, {
     name: 'neotolis-workflow',
     version: '0.0.0',
-    description: 'Rigorous intake, decision grilling and researched planning for Neotolis Workflow.',
+    description: 'Rigorous intake, planning, execution and review for Neotolis Workflow.',
     author: { name: 'Neotolis' },
   });
 
@@ -52,7 +58,7 @@ test('Claude manifests expose the local namespaced workflow plugin', () => {
       name: 'neotolis-workflow',
       source: './plugins/neotolis-workflow',
       version: '0.0.0',
-      description: 'Rigorous intake, decision grilling and researched planning for Neotolis Workflow.',
+      description: 'Rigorous intake, planning, execution and review for Neotolis Workflow.',
     }],
   });
 });
