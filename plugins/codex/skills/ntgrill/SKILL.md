@@ -30,9 +30,10 @@ lifecycle and `next_action`, and stop. Do not retry, repair, or bypass the CLI.
 1. Run `status`. Use its `project_root` and current `run_id` for the sole
    canonical path: `<project_root>/.ntworkflow/runs/<run_id>/BRIEF.md`.
    If `next_action.skill` is not `ntgrill`, begin the response with the literal
-   diagnostic `invalid phase state`, report the actual lifecycle and supplied
-   `next_action`, and stop before
-   any freshness or restart question. At `plan-ready`, explain that grilling
+   diagnostic `invalid phase state`. Use this response format, replacing only
+   the placeholders: `invalid phase state: ntgrill is not legal at <lifecycle>. <next_action.instruction>`
+   Keep the opening diagnostic literal, even when answering in another language.
+   Stop before any freshness or restart question. At `plan-ready`, explain that grilling
    is complete and name `ntplan` for explicit invocation in a fresh session.
    Do not invoke any other skill automatically.
 2. If this session already ran intake or another major phase, ask for a fresh

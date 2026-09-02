@@ -2,7 +2,7 @@ import { SESSION_ID_FORMAT } from '../core/domain.ts';
 import { ERROR_CODES, WorkflowError } from '../core/errors.ts';
 import { providerForSessionId } from '../core/invariants.ts';
 import type { State } from '../core/state.ts';
-import { validateNttaskBrief } from './artifacts.ts';
+import { validateBrief, validateNttaskBrief } from './artifacts.ts';
 import { runStateTransaction } from './transaction.ts';
 import type {
   StateTransactionResult,
@@ -20,12 +20,18 @@ export function isInterruptionAuthority(value: unknown): value is InterruptionAu
   return INTERRUPTION_AUTHORITIES.some((authority) => authority === value);
 }
 
-export type IntakePhase = 'nttask' | 'ntgrill';
+export type IntakePhase = 'nttask' | 'ntgrill' | 'ntplan';
+
+const INPUT_LIFECYCLE = {
+  nttask: 'intake-active', ntgrill: 'brief-ready', ntplan: 'plan-ready',
+} as const;
 
 export interface BeginPhaseInput {
   readonly sessionId: string;
   readonly interruption?: InterruptionAuthority;
   readonly blockerResolved?: boolean;
+  readonly researcherAvailable?: boolean;
+  readonly criticAvailable?: boolean;
 }
 
 export interface StopPhaseInput {
@@ -36,7 +42,7 @@ export interface StopPhaseInput {
 
 type ActivePhaseState = TransactionState & {
   readonly current: NonNullable<TransactionState['current']> & {
-    readonly lifecycle: 'intake-active' | 'brief-ready';
+    readonly lifecycle: 'intake-active' | 'brief-ready' | 'plan-ready';
     readonly phase: IntakePhase;
     readonly owner: { readonly session_id: string };
   };
@@ -115,7 +121,7 @@ export function requireActivePhase(
   phase: IntakePhase,
 ): asserts state is ActivePhaseState {
   if (
-    state?.current?.lifecycle !== (phase === 'nttask' ? 'intake-active' : 'brief-ready')
+    state?.current?.lifecycle !== INPUT_LIFECYCLE[phase]
     || state.current.phase !== phase
     || state.current.owner === null
   ) {
@@ -148,7 +154,7 @@ function beginTransition(
   input: BeginPhaseInput,
   phase: IntakePhase,
 ): State & { current: NonNullable<State['current']> } {
-  if (state?.current?.lifecycle !== (phase === 'nttask' ? 'intake-active' : 'brief-ready')) {
+  if (state?.current?.lifecycle !== INPUT_LIFECYCLE[phase]) {
     illegalTransition(`phase begin ${phase}`, state);
   }
   if (state.current.blocker !== null && input.blockerResolved !== true) {
@@ -156,6 +162,17 @@ function beginTransition(
   }
   if (state.current.owner !== null && input.interruption === undefined) {
     ownershipConflict(state.current.owner.session_id, input.sessionId, phase);
+  }
+  if (phase === 'ntplan') {
+    for (const [role, available] of [
+      ['researcher', input.researcherAvailable], ['critic', input.criticAvailable],
+    ] as const) {
+      if (available !== true) throw new WorkflowError({
+        code: ERROR_CODES.ARTIFACT_FAILURE,
+        message: `The required native ntplan ${role} is unavailable.`,
+        details: { role },
+      });
+    }
   }
 
   return {
@@ -205,8 +222,10 @@ export async function beginPhase(
     runId = next.current.run_id;
     return next;
   }, {
-    ...(phase === 'ntgrill' ? {
-      prepareCommit: () => validateNttaskBrief(projectRoot, runId),
+    ...(phase !== 'nttask' ? {
+      prepareCommit: () => phase === 'ntgrill'
+        ? validateNttaskBrief(projectRoot, runId)
+        : validateBrief(projectRoot, runId, 'ntgrill'),
     } : {}),
   });
 }

@@ -24,6 +24,7 @@ test('both native ntgrill skills carry the same self-contained phase contract', 
       'phase begin ntgrill --session-id', 'phase stop ntgrill --session-id',
       'phase complete ntgrill --session-id "<owner>" --user-confirmed',
       '`invalid phase state`',
+      'invalid phase state: ntgrill is not legal at <lifecycle>. <next_action.instruction>',
     ]) assert.ok(skill.includes(text), `Missing exact CLI contract: ${text}`);
   }
   assert.ok(skills[0]?.includes('`claude:`'));

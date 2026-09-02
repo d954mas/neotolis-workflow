@@ -26,11 +26,14 @@ export interface PhaseBeginArguments extends PhaseArgumentsBase {
   readonly operation: 'begin';
   readonly interruption?: InterruptionAuthority;
   readonly blockerResolved: boolean;
+  readonly researcherAvailable?: boolean;
+  readonly criticAvailable?: boolean;
 }
 
 export interface PhaseCompleteArguments extends PhaseArgumentsBase {
   readonly operation: 'complete';
   readonly userConfirmed?: true;
+  readonly criticPassed?: true;
 }
 
 export interface PhaseStopArguments extends PhaseArgumentsBase {
@@ -43,7 +46,13 @@ export type PhaseArguments =
   | PhaseBeginArguments
   | PhaseCompleteArguments
   | PhaseStopArguments;
-export type CliArguments = StatusArguments | RunArguments | PhaseArguments;
+export interface PlanArguments {
+  readonly cwd: string;
+  readonly command: 'plan';
+  readonly operation: 'validate';
+  readonly sessionId: string;
+}
+export type CliArguments = StatusArguments | RunArguments | PhaseArguments | PlanArguments;
 
 function invalidArguments(
   message: string,
@@ -117,6 +126,15 @@ function parsePhaseBegin(
   options: readonly string[],
   phase: IntakePhase,
 ): PhaseBeginArguments {
+  if (phase === 'ntplan' && options.some((option) => option === '--researcher-available' || option === '--critic-available')) {
+    const roleFlags: string[] = options.filter((option) => option === '--researcher-available' || option === '--critic-available');
+    if (new Set(roleFlags).size !== roleFlags.length) invalidArguments('Duplicate native role flag.', { argument: roleFlags[0] ?? '' });
+    return Object.freeze({
+      ...parsePhaseBegin(cwd, sessionId, options.filter((option) => !roleFlags.includes(option)), phase),
+      researcherAvailable: roleFlags.includes('--researcher-available'),
+      criticAvailable: roleFlags.includes('--critic-available'),
+    });
+  }
   if (options.length === 0) {
     return Object.freeze({
       ...phaseBase(cwd, sessionId, phase),
@@ -185,7 +203,7 @@ function parsePhaseArguments(cwd: string, argv: readonly string[]): PhaseArgumen
   if (operation !== 'begin' && operation !== 'complete' && operation !== 'stop') {
     invalidArguments('Unknown phase operation.', { operation: operation ?? '' });
   }
-  if (argv[4] !== 'nttask' && argv[4] !== 'ntgrill') {
+  if (argv[4] !== 'nttask' && argv[4] !== 'ntgrill' && argv[4] !== 'ntplan') {
     invalidArguments('Unknown phase.', { phase: argv[4] ?? '' });
   }
 
@@ -194,6 +212,12 @@ function parsePhaseArguments(cwd: string, argv: readonly string[]): PhaseArgumen
   const options = argv.slice(7);
   if (operation === 'begin') return parsePhaseBegin(cwd, sessionId, options, phase);
   if (operation === 'stop') return parsePhaseStop(cwd, sessionId, options, phase);
+  if (phase === 'ntplan') {
+    if (options.length !== 2 || options[0] !== '--critic-pass' || options[1] !== '--user-confirmed') {
+      invalidArguments('ntplan completion requires --critic-pass --user-confirmed.', { argument: options[0] ?? '' });
+    }
+    return Object.freeze({ ...phaseBase(cwd, sessionId, phase), operation: 'complete', criticPassed: true, userConfirmed: true });
+  }
   if (phase === 'ntgrill') {
     if (options.length !== 1 || options[0] !== '--user-confirmed') {
       invalidArguments('ntgrill completion requires --user-confirmed.', { argument: options[0] ?? '' });
@@ -224,10 +248,11 @@ export function operationForArguments(argv: readonly string[]): string {
   if (
     argv[2] === 'phase'
     && (argv[3] === 'begin' || argv[3] === 'complete' || argv[3] === 'stop')
-    && (argv[4] === 'nttask' || argv[4] === 'ntgrill')
+    && (argv[4] === 'nttask' || argv[4] === 'ntgrill' || argv[4] === 'ntplan')
   ) {
     return `phase ${argv[3]} ${argv[4]}`;
   }
+  if (argv[2] === 'plan' && argv[3] === 'validate') return 'plan validate';
   return argv[2] ?? 'unknown';
 }
 
@@ -249,6 +274,12 @@ export function parseArguments(argv: readonly string[]): CliArguments {
   }
   if (command === 'run') return parseRunArguments(argv[1], argv);
   if (command === 'phase') return parsePhaseArguments(argv[1], argv);
+  if (command === 'plan') {
+    if (argv.length !== 6 || argv[3] !== 'validate' || argv[4] !== '--session-id' || !argv[5]) {
+      invalidArguments('Expected plan validate --session-id <provider:id>.', { argument: argv[3] ?? '' });
+    }
+    return Object.freeze({ cwd: argv[1], command, operation: 'validate', sessionId: argv[5] });
+  }
 
   invalidArguments('Unknown command.', { command: command ?? '' });
 }

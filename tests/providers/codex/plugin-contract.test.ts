@@ -13,14 +13,17 @@ function filesUnder(root: string, directory = root): string[] {
   return files.sort();
 }
 
-test('Codex plugin contains only nttask, ntgrill, license, identity hook, and runtime files', () => {
+test('Codex plugin contains the three implemented skills, planning roles, license, identity hook, and runtime', () => {
   assert.deepEqual(filesUnder(resolve('plugins/codex')), [
     '.codex-plugin/plugin.json',
+    'agents/ntplan_critic.toml',
+    'agents/ntplan_researcher.toml',
     'hooks/hooks.json',
     'runtime/ntworkflow.mjs',
     'runtime/session-start.mjs',
     'skills/ntgrill/LICENSE',
     'skills/ntgrill/SKILL.md',
+    'skills/ntplan/SKILL.md',
     'skills/nttask/SKILL.md',
   ]);
 });
@@ -33,13 +36,13 @@ test('Codex manifests expose the isolated local workflow plugin', () => {
   assert.deepEqual(plugin, {
     name: 'neotolis-workflow',
     version: '0.0.0',
-    description: 'Rigorous task intake and decision grilling for Neotolis Workflow.',
+    description: 'Rigorous intake, decision grilling and researched planning for Neotolis Workflow.',
     author: { name: 'Neotolis' },
     skills: './skills/',
     interface: {
       displayName: 'Neotolis Workflow',
-      shortDescription: 'Task intake and decision grilling for large development work.',
-      longDescription: 'Create a canonical task brief, then resolve decisions before planning.',
+      shortDescription: 'Intake, grilling and researched planning for large development work.',
+      longDescription: 'Create a brief, resolve decisions, then research and approve an executable plan.',
       developerName: 'Neotolis',
       category: 'Developer Tools',
       capabilities: [],

@@ -16,6 +16,7 @@ import type { State } from '../core/state.ts';
 import { beginPhase, stopPhase } from '../runtime/phase.ts';
 import { completeNtgrillPhase } from '../runtime/ntgrill.ts';
 import { completeNttaskPhase } from '../runtime/nttask.ts';
+import { completeNtplanPhase, validatePlan } from '../runtime/ntplan.ts';
 import { readPreflight } from '../runtime/preflight.ts';
 import { isGitProjectRoot, resolveProjectRoot } from '../runtime/project-root.ts';
 import { cancelRun, completeRun, startRun } from '../runtime/run.ts';
@@ -37,13 +38,13 @@ const RUN_FAILURE_ACTION = action(
   null,
   'Resolve the reported run failure before retrying.',
 );
-function phaseFailureAction(phase: 'nttask' | 'ntgrill'): NextAction {
+function phaseFailureAction(phase: 'nttask' | 'ntgrill' | 'ntplan'): NextAction {
   return action(phase, `Resolve the reported phase failure before retrying ${phase}.`);
 }
-function blockerAction(phase: 'nttask' | 'ntgrill'): NextAction {
+function blockerAction(phase: 'nttask' | 'ntgrill' | 'ntplan'): NextAction {
   return action(phase, `Resolve the recorded blocker, then retry phase begin ${phase} with --blocker-resolved.`);
 }
-function ownerAction(phase: 'nttask' | 'ntgrill', completing: boolean): NextAction {
+function ownerAction(phase: 'nttask' | 'ntgrill' | 'ntplan', completing: boolean): NextAction {
   return action(phase, completing
     ? `Continue in the recorded owner session, or replace it with phase begin ${phase} --interruption <provider-ended|user-confirmed>.`
     : 'Continue in the recorded owner session, or retry with explicit --interruption authority.');
@@ -72,6 +73,8 @@ function nextActionFor(state: State | null, canStartRun = true): NextAction {
       if (state.current.phase === 'ntgrill') return action('ntgrill', 'Continue the active ntgrill phase.');
       return action('ntgrill', 'Continue with ntgrill.');
     case 'plan-ready':
+      if (state.current.blocker !== null) return blockerAction('ntplan');
+      if (state.current.phase === 'ntplan') return action('ntplan', 'Continue the active ntplan phase.');
       return action('ntplan', 'Continue with ntplan.');
     case 'plan-approved':
     case 'work-active':
@@ -146,7 +149,9 @@ async function executePhase(parsed: PhaseArguments): Promise<CommandResult> {
   const projectRoot = await resolveProjectRoot(parsed.cwd);
 
   if (parsed.operation === 'complete') {
-    const result = parsed.phase === 'ntgrill'
+    const result = parsed.phase === 'ntplan'
+      ? await completeNtplanPhase(projectRoot, { sessionId: parsed.sessionId, criticPassed: parsed.criticPassed === true, userConfirmed: parsed.userConfirmed === true })
+      : parsed.phase === 'ntgrill'
       ? await completeNtgrillPhase(projectRoot, { sessionId: parsed.sessionId, userConfirmed: parsed.userConfirmed === true })
       : await completeNttaskPhase(projectRoot, { sessionId: parsed.sessionId });
     return { projectRoot, ...result };
@@ -159,6 +164,10 @@ async function executePhase(parsed: PhaseArguments): Promise<CommandResult> {
     const result = await beginPhase(projectRoot, parsed.phase, {
       sessionId: parsed.sessionId,
       blockerResolved: parsed.blockerResolved,
+      ...(parsed.phase === 'ntplan' ? {
+        researcherAvailable: parsed.researcherAvailable === true,
+        criticAvailable: parsed.criticAvailable === true,
+      } : {}),
       ...interruption,
     });
     return { projectRoot, ...result };
@@ -172,15 +181,20 @@ async function executePhase(parsed: PhaseArguments): Promise<CommandResult> {
   return { projectRoot, ...result };
 }
 
-function executeCommand(parsed: CliArguments): Promise<CommandResult> {
+async function executeCommand(parsed: CliArguments): Promise<CommandResult> {
   if (parsed.command === 'status') return executeStatus(parsed);
   if (parsed.command === 'run') return executeRun(parsed);
+  if (parsed.command === 'plan') {
+    const projectRoot = await resolveProjectRoot(parsed.cwd);
+    return { projectRoot, ...await validatePlan(projectRoot, parsed.sessionId) };
+  }
   return executePhase(parsed);
 }
 
 function operationForCommand(parsed: CliArguments): string {
   if (parsed.command === 'status') return 'status';
   if (parsed.command === 'run') return `run ${parsed.operation}`;
+  if (parsed.command === 'plan') return 'plan validate';
   return `phase ${parsed.operation} ${parsed.phase}`;
 }
 
@@ -195,7 +209,8 @@ function failureAction(
       ? nextActionFor(state)
       : RUN_FAILURE_ACTION;
   }
-  if (!(error instanceof WorkflowError)) return phaseFailureAction(parsed.phase);
+  const phase = parsed.command === 'plan' ? 'ntplan' : parsed.phase;
+  if (!(error instanceof WorkflowError)) return phaseFailureAction(phase);
 
   switch (error.code) {
     case ERROR_CODES.INVALID_INPUT:
@@ -203,11 +218,11 @@ function failureAction(
     case ERROR_CODES.ILLEGAL_TRANSITION:
       return nextActionFor(state);
     case ERROR_CODES.OWNERSHIP_CONFLICT:
-      return ownerAction(parsed.phase, parsed.operation === 'complete');
+      return ownerAction(phase, parsed.operation === 'complete');
     case ERROR_CODES.UNRESOLVED_BLOCKER:
-      return blockerAction(parsed.phase);
+      return blockerAction(phase);
     default:
-      return phaseFailureAction(parsed.phase);
+      return phaseFailureAction(phase);
   }
 }
 

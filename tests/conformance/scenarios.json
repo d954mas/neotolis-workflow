@@ -111,6 +111,42 @@
         {"cli":["phase","begin","ntgrill","--session-id","$other_owner","--blocker-resolved"]},
         {"cli":["run","cancel","--session-id","$other_owner","--user-confirmed"]}
       ]
+    },
+    {
+      "name": "planning validation and explicit approval",
+      "git": true,
+      "seed": [{"path":".ntworkflow/state.json","text":"{\"next_work_number\":2,\"current\":{\"run_id\":\"NT-001\",\"lifecycle\":\"plan-ready\",\"phase\":null,\"owner\":null,\"blocker\":null,\"work\":null}}"},{"path":".ntworkflow/runs/NT-001/BRIEF.md","text":"# Экспорт отчётов\n\n## Brief\nЭкспортировать текущий отчёт в JSON без зависимостей и без изменения просмотра.\n\n## Repository context\nКод находится в `src/отчёты/export.ts`. Источник: https://example.com/отчёты.\n\n## Success\nПартнёр получает JSON-файл с текущими данными без потери Unicode.\n"}],
+      "steps": [
+        {"cli":["phase","begin","ntplan","--session-id","$owner"]},
+        {"cli":["phase","begin","ntplan","--session-id","$owner","--researcher-available","--critic-available"]},
+        {"cli":["plan","validate","--session-id","$owner"]},
+        {"write":{"path":".ntworkflow/runs/NT-001/SPEC.md","fixture":"tests/fixtures/plans/SPEC.md"}},
+        {"write":{"path":".ntworkflow/runs/NT-001/PLAN.md","fixture":"tests/fixtures/plans/PLAN.md"}},
+        {"write":{"path":".ntworkflow/runs/NT-001/tasks/NT-001-01.md","fixture":"tests/fixtures/plans/NT-001-01.md"}},
+        {"write":{"path":".ntworkflow/runs/NT-001/tasks/NT-001-02.md","fixture":"tests/fixtures/plans/NT-001-02.md"}},
+        {"cli":["plan","validate","--session-id","$owner"]},
+        {"cli":["phase","complete","ntplan","--session-id","$owner","--user-confirmed"]},
+        {"cli":["phase","complete","ntplan","--session-id","$owner","--critic-pass"]},
+        {"cli":["phase","complete","ntplan","--session-id","$owner","--critic-pass","--user-confirmed"]},
+        {"cli":["phase","begin","ntplan","--session-id","$owner","--researcher-available","--critic-available"]},
+        {"cli":["plan","validate","--session-id","$other_owner"]}
+      ]
+    },
+    {
+      "name": "planning ownership interruption and source blocker",
+      "git": true,
+      "seed": [{"path":".ntworkflow/state.json","text":"{\"next_work_number\":2,\"current\":{\"run_id\":\"NT-001\",\"lifecycle\":\"plan-ready\",\"phase\":null,\"owner\":null,\"blocker\":null,\"work\":null}}"},{"path":".ntworkflow/runs/NT-001/BRIEF.md","text":"# Экспорт отчётов\n\n## Brief\nЭкспортировать текущий отчёт в JSON без зависимостей и без изменения просмотра.\n\n## Repository context\nКод находится в `src/отчёты/export.ts`. Источник: https://example.com/отчёты.\n\n## Success\nПартнёр получает JSON-файл с текущими данными без потери Unicode.\n"}],
+      "steps": [
+        {"cli":["phase","begin","ntplan","--session-id","$owner","--researcher-available","--critic-available"]},
+        {"cli":["phase","begin","ntplan","--session-id","$owner","--researcher-available","--critic-available"]},
+        {"cli":["phase","begin","ntplan","--session-id","$other_owner","--researcher-available","--critic-available"]},
+        {"cli":["phase","begin","ntplan","--session-id","$other_owner","--researcher-available","--critic-available","--interruption","user-confirmed"]},
+        {"cli":["plan","validate","--session-id","$owner"]},
+        {"cli":["phase","stop","ntplan","--session-id","$other_owner","--blocker","Required evidence unavailable."]},
+        {"cli":["phase","begin","ntplan","--session-id","$owner","--researcher-available","--critic-available"]},
+        {"cli":["phase","begin","ntplan","--session-id","$owner","--researcher-available","--critic-available","--blocker-resolved"]},
+        {"cli":["run","cancel","--session-id","$owner","--user-confirmed"]}
+      ]
     }
   ]
 }

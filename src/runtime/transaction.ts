@@ -30,7 +30,7 @@ export type TransactionFaultInjector = (
   point: TransactionFaultPoint,
 ) => void | Promise<void>;
 export type TransactionState = State;
-export type StateTransition = (state: TransactionState | null) => State;
+export type StateTransition = (state: TransactionState | null) => State | Promise<State>;
 export type StateCommitPreparation = (
   currentState: TransactionState | null,
   nextState: TransactionState,
@@ -248,7 +248,7 @@ export async function runStateTransaction(
 
   try {
     const currentState = await readProjectState(projectRoot);
-    const nextState = parseState(transition(currentState));
+    const nextState = parseState(await transition(currentState));
     const serializedState = serializeState(nextState);
     await options.prepareCommit?.(currentState, nextState);
     const durabilityWarning = await commitState(

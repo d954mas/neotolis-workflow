@@ -76,21 +76,27 @@ test('release artifacts contain exactly the approved inventories and no links', 
   assert.deepEqual(filesUnder(CLAUDE_MARKETPLACE), [
     '.claude-plugin/marketplace.json',
     'plugins/neotolis-workflow/.claude-plugin/plugin.json',
+    'plugins/neotolis-workflow/agents/ntplan-critic.md',
+    'plugins/neotolis-workflow/agents/ntplan-researcher.md',
     'plugins/neotolis-workflow/hooks/hooks.json',
     'plugins/neotolis-workflow/runtime/ntworkflow.mjs',
     'plugins/neotolis-workflow/runtime/session-start.mjs',
     'plugins/neotolis-workflow/skills/ntgrill/LICENSE',
     'plugins/neotolis-workflow/skills/ntgrill/SKILL.md',
+    'plugins/neotolis-workflow/skills/ntplan/SKILL.md',
     'plugins/neotolis-workflow/skills/nttask/SKILL.md',
   ]);
   assert.deepEqual(filesUnder(CODEX_MARKETPLACE), [
     '.agents/plugins/marketplace.json',
     'plugins/neotolis-workflow/.codex-plugin/plugin.json',
+    'plugins/neotolis-workflow/agents/ntplan_critic.toml',
+    'plugins/neotolis-workflow/agents/ntplan_researcher.toml',
     'plugins/neotolis-workflow/hooks/hooks.json',
     'plugins/neotolis-workflow/runtime/ntworkflow.mjs',
     'plugins/neotolis-workflow/runtime/session-start.mjs',
     'plugins/neotolis-workflow/skills/ntgrill/LICENSE',
     'plugins/neotolis-workflow/skills/ntgrill/SKILL.md',
+    'plugins/neotolis-workflow/skills/ntplan/SKILL.md',
     'plugins/neotolis-workflow/skills/nttask/SKILL.md',
   ]);
 });
@@ -195,11 +201,14 @@ test('pinned Claude installs the complete packaged marketplace fixture', () => {
     assert.equal(plugin.enabled, true);
     assert.deepEqual(filesUnder(plugin.installPath), [
       '.claude-plugin/plugin.json',
+    'agents/ntplan-critic.md',
+    'agents/ntplan-researcher.md',
       'hooks/hooks.json',
       'runtime/ntworkflow.mjs',
       'runtime/session-start.mjs',
       'skills/ntgrill/LICENSE',
     'skills/ntgrill/SKILL.md',
+    'skills/ntplan/SKILL.md',
     'skills/nttask/SKILL.md',
     ]);
   } finally {

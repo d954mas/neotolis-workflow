@@ -2,12 +2,14 @@
 
 ## Status
 
-Contract design is confirmed. The first tracer bullet, TB-01–TB-11, is complete
-at `3db1f4c5e66b02aa1bfd65cf07d7bf84545e786d`. The separate ntgrill slice is implemented:
-`ntgrill`: `brief-ready` → confirmed shared understanding → rewritten BRIEF →
-`plan-ready`. Its bounded plan is [implementation/NTGRILL.md](implementation/NTGRILL.md).
-`ntplan`, `ntwork`, telemetry, `ntstats`, and `ntreflect` are not implemented.
-The full six-skill workflow is not complete. New changes require fresh CI.
+Contract design is confirmed. TB-01–TB-11 and the separate `ntgrill` slice are
+merged through `cde0eab1fdd4fd576fc4dd98da7c570ccf559df4`. The current working
+tree implements the separate `ntplan` slice: `plan-ready` and a grilled BRIEF →
+native research → primary-owned SPEC/PLAN/task packets → structural validation →
+independent criticism and convergence → explicit user approval → `plan-approved`.
+Its bounded plan is [implementation/NTPLAN.md](implementation/NTPLAN.md).
+`ntwork`, telemetry, `ntstats`, and `ntreflect` remain unimplemented. The full
+six-skill workflow is incomplete, and the working-tree changes require fresh CI.
 
 ## Goal
 
@@ -104,8 +106,9 @@ GSD while retaining:
 
 ## Installation
 
-The packaged slice exposes `nttask` and `ntgrill`; the other four skills and
-supporting roles are not implemented. `ntgrill` uses only its primary agent.
+The packaged slice exposes `nttask`, `ntgrill`, and `ntplan`; the other three
+skills are not implemented. `ntgrill` uses only its primary agent. `ntplan`
+requires its packaged read-only researcher and critic definitions.
 Use Node.js 24 and Git. Verification pins Claude Code
 2.1.220 and Codex CLI 0.144.6 through `package-lock.json`; do not replace them with
 an unpinned download during a test run.
@@ -136,7 +139,20 @@ codex -c features.remote_plugin=false plugin list --json
 ```
 
 For pinned Codex, enable `plugins = true` and `hooks = true` in the existing
-`[features]` section of the user configuration; preserve other settings. Open
+`[features]` section of the user configuration; preserve other settings. Codex
+does not register plugin `agents/` automatically: add native global declarations
+whose `config_file` values are the absolute installed plugin paths:
+
+```toml
+[agents.ntplan_researcher]
+config_file = "<installed-plugin>/agents/ntplan_researcher.toml"
+
+[agents.ntplan_critic]
+config_file = "<installed-plugin>/agents/ntplan_critic.toml"
+```
+
+The provider owns the model and effort in those TOMLs. Do not copy the role
+contents into the global config and do not substitute a generic agent. Open
 `/hooks`, review and trust the Neotolis SessionStart hook, and start a fresh
 session. Claude also needs a fresh session after installation. The hook supplies
 the native owner, consumer cwd, and exact bundled CLI path; absent context must
@@ -164,7 +180,7 @@ The deterministic installation fixtures exercise the exact pinned CLI commands.
 1. `npm run check`: TypeScript checking and ESLint.
 2. `npm run build`: compile the dependency-free CLI.
 3. `npm --offline test`: all `tests/**/*.test.ts`, including tooling, state,
-   status, transaction, run, phase, nttask, ntgrill, clean native provider installation
+   status, transaction, run, phase, nttask, ntgrill, ntplan, clean native provider installation
    and discovery fixtures, conformance, and E2E.
 4. `npm --offline run package`: rebuild and package both complete marketplaces
    and the npm tarball.
@@ -196,6 +212,13 @@ ownership, same-session restart, cross-provider takeover, explicit completion
 confirmation, missing/invalid BRIEF, rejection of any Open questions section,
 blockers, failed state replacement, and later-state diagnosis. The conformance
 corpus compares complete JSON responses, including every error field.
+Planning coverage includes required native-role availability, begin/stop/restart
+and takeover ownership, strict grilled-BRIEF input, SPEC/PLAN/task packet
+structure, stable dependency order, exact acceptance ownership, fenced-content
+exclusion, locked atomic completion, approval and critic attestations, late
+read-only diagnosis, and initialized pending work tasks. Semantic research
+quality, criticism and truthful approval remain live-model gates rather than CI
+claims.
 Commit-boundary checks additionally reuse the
 existing runtime fault-injection seam to prove that the old state remains until
 replacement and survives a failed commit; these checks do not add CLI options.
@@ -223,7 +246,14 @@ Those tracer jobs do not cover ntgrill. The separate ntgrill slice passed
 on commit `02ec60bb2f4b2e8f0edb9b965e08e37f9fafb7ae`: Windows had 207 passed
 and one platform skip; Ubuntu and macOS had 208 passed each. Packaging was
 5/5 on every platform. This is commit-specific evidence; subsequent changes
-require their own CI run.
+require their own CI run. The final pre-merge review commit
+`72c48b7768038d71d2faf4c9f9e259d0a672c467` passed
+[run 33401226507](https://github.com/d954mas/neotolis-workflow/actions/runs/33401226507):
+Windows 207 passed and one skip; Ubuntu and macOS 208 passed; packaging 5/5,
+E2E 12 and conformance six on every platform. The merged `main` SHA
+`cde0eab1fdd4fd576fc4dd98da7c570ccf559df4` passed post-merge
+[run 33401772202](https://github.com/d954mas/neotolis-workflow/actions/runs/33401772202).
+Neither run covers the current ntplan working tree.
 
 CI references: [GitHub matrix jobs](https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/run-job-variations),
 [setup-node v6](https://github.com/actions/setup-node/tree/v6),
@@ -250,7 +280,7 @@ still requires fresh three-platform CI on the release commit.
    and verify that the brief remains unchanged until the revised account is
    explicitly confirmed. Then check plan-ready, a full current BRIEF without
    Open questions, no project-code edits, and read-only late ntgrill rejection
-   naming ntplan. Do not attempt the unimplemented planning phase.
+   naming ntplan.
 5. In another disposable run, verify that a competing session stops, an
    explicitly confirmed interruption allows cross-provider takeover, and
    explicit cancellation preserves the run directory and partial BRIEF.
@@ -262,6 +292,14 @@ still requires fresh three-platform CI on the release commit.
    Confirm restart and verify phase begin includes interruption authority when
    an owner remains recorded. A fresh session is not disk-resume evidence;
    neither test establishes an operating-system reboot.
+7. From a grilled plan-ready run, invoke `ntplan` in a fresh primary session.
+   Confirm native researcher discovery, primary-owned SPEC/PLAN/task packets,
+   structural validation, an independent native critic and convergence. Make a
+   material correction to the first approval view; require a fresh critic PASS,
+   then explicitly approve and confirm `plan-approved`. No project-code file may
+   change. A late call diagnoses lifecycle and `next_action` without invoking
+   another skill. Interrupted planning requires explicit restart confirmation,
+   discards every old planning draft, and repeats research.
 
 Record the release commit, OS, provider versions, session references, and
 observed results. Failures block release; do not repair state or weaken the
@@ -313,6 +351,61 @@ nondeterministic. This tests process restart, not an OS reboot. Headless native
 flows were used; the interactive Codex /hooks screen was not tested. Hook trust
 used native hooks/list and config/batchWrite only after installed release-byte
 and currentHash verification. No credentials were copied into fixtures.
+
+## Local ntplan validation — 2026-09-02
+
+The current working tree passes Windows `npm run verify`: 221 tests total,
+220 passed and one platform skip; packaging 5/5. This includes 14 E2E cases and
+eight full-response cross-provider conformance scenarios. The final tarball
+SHA-256 is `F91A3067BE974EE04F1929D74E60CA26820D70C17640CDDD1AE25C8A43206720`.
+This is local evidence for an uncommitted working tree, not CI evidence.
+
+Three independent read-only reviews covered simplicity and ceremony,
+architecture and extensibility, and correctness and evidence. One confirmed
+external-artifact bypass let a fenced `- AC-*` example claim final acceptance
+ownership. The validator now uses the existing Markdown fence visibility when
+reading those rows; focused re-review passed 15/15. No registry, scanner,
+fallback, repair path, extra approval or impossible-internal-state guard was
+added. The other reviews reported no findings.
+
+The fresh late-`ntgrill` smoke made one model call per provider. Both emitted the
+required literal `invalid phase state`, named actual `plan-ready` and `ntplan`,
+and left full trees unchanged. Codex began with the marker. Claude placed one
+explanatory paragraph before it, so the stricter begin-with-marker instruction
+remains a live model-compliance limitation. This new observation does not
+rewrite the historical 31/32 audit or turn it into a new aggregate score.
+
+Claude Code 2.1.220 / Claude Sonnet 5 completed the ntplan smoke in a disposable
+Unicode-path Git repository. Native discovery exposed both packaged agents. A
+terminated provider process interrupted critic round one; disk resume retained
+the same native session ID, diagnosed the recorded owner, requested explicit
+restart confirmation, discarded SPEC/PLAN/tasks, and repeated research. The
+fresh researcher ran, structural validation passed, and critic round one passed.
+The first approval view was rejected with the material `--name` to
+`--exact-name` correction; canonical artifacts changed, the old PASS was
+invalidated, and a fresh full critic round passed before explicit approval.
+Completion produced `plan-approved` with two pending tasks. A late invocation
+named `ntwork`, did not invoke it, and did not mutate files. Consumer files,
+including an opaque binary, remained byte-identical.
+
+Codex 0.144.6 / gpt-5.6-sol discovered the skill and loaded both native global
+role declarations through `agents.<name>.config_file`; `config/read` confirmed
+them. Its app-server primary tool surface nevertheless did not expose the
+required `agent_type` parameter. It therefore omitted both availability flags,
+received the required researcher-unavailable artifact failure, and left the
+plan-ready state and complete tree unchanged. One diagnostic restart proved the
+same boundary with persisted configuration; no generic agent, fallback, retry
+until green, or state repair was used. Full Codex research/criticism/approval is
+therefore not proven and blocks release.
+
+The model smoke used the package generated before the review-only fenced-row
+fix. Its ntplan skill bytes are identical to the final package; the runtime bytes
+differ only by that deterministic structural validation fix, which the final
+verify covers. No model claim is presented as exact-byte live evidence for the
+final runtime bundle. Evidence and exact boundaries are retained outside
+`build/` and copied after verification to `build/live-smoke-ntplan/REPORT.md`.
+No credentials were copied into fixtures, no project implementation began, and
+the exercise proves process restart rather than an operating-system reboot.
 
 ## ntgrill contract and provenance
 

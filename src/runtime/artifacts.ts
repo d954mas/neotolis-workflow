@@ -25,15 +25,21 @@ function artifactFailure(path: string, reason: string, phase: 'nttask' | 'ntgril
   });
 }
 
-function parseBrief(markdown: string): { headings: Heading[]; lines: string[] } {
+export function parseMarkdown(markdown: string): {
+  headings: Heading[];
+  lines: string[];
+  visibleLines: string[];
+} {
   const result: Heading[] = [];
   const lines = markdown.split(/\r?\n/u);
+  const visibleLines = [...lines];
   let htmlComment = false;
   let fence: { character: '`' | '~'; length: number } | null = null;
 
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index] ?? '';
     if (fence !== null) {
+      visibleLines[index] = '';
       const closingMatch = /^ {0,3}(`+|~+)[ \t]*$/u.exec(line);
       const closingMarker = closingMatch?.[1];
       if (
@@ -52,6 +58,7 @@ function parseBrief(markdown: string): { headings: Heading[]; lines: string[] } 
         htmlComment = ending !== '-->';
         return '';
       });
+      visibleLines[index] = lines[index] as string;
       continue;
     }
 
@@ -61,6 +68,7 @@ function parseBrief(markdown: string): { headings: Heading[]; lines: string[] } 
       const info = openingMatch[2] ?? '';
       if (marker[0] !== '`' || !info.includes('`')) {
         fence = { character: marker[0] as '`' | '~', length: marker.length };
+        visibleLines[index] = '';
         continue;
       }
     }
@@ -75,11 +83,11 @@ function parseBrief(markdown: string): { headings: Heading[]; lines: string[] } 
     });
   }
 
-  return { headings: result, lines };
+  return { headings: result, lines, visibleLines };
 }
 
 function validateBriefStructure(markdown: string, path: string, phase: 'nttask' | 'ntgrill'): void {
-  const { headings: parsedHeadings, lines } = parseBrief(markdown);
+  const { headings: parsedHeadings, lines } = parseMarkdown(markdown);
   const titles = parsedHeadings.filter((heading) => heading.level === 1);
   const title = titles[0];
   if (titles.length !== 1 || title === undefined || title.text.length === 0) {

@@ -1,15 +1,15 @@
 {
   "name": "neotolis-workflow",
   "version": "0.0.0",
-  "description": "Rigorous task intake and decision grilling for Neotolis Workflow.",
+  "description": "Rigorous intake, decision grilling and researched planning for Neotolis Workflow.",
   "author": {
     "name": "Neotolis"
   },
   "skills": "./skills/",
   "interface": {
     "displayName": "Neotolis Workflow",
-    "shortDescription": "Task intake and decision grilling for large development work.",
-    "longDescription": "Create a canonical task brief, then resolve decisions before planning.",
+    "shortDescription": "Intake, grilling and researched planning for large development work.",
+    "longDescription": "Create a brief, resolve decisions, then research and approve an executable plan.",
     "developerName": "Neotolis",
     "category": "Developer Tools",
     "capabilities": [],

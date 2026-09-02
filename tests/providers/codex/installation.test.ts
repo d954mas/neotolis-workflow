@@ -295,7 +295,7 @@ test('pinned Codex installs and discovers the staged plugin without a model call
         (entry) => entry.name.startsWith('neotolis-workflow:'),
       );
       assert.deepEqual(skills?.map(({ name }) => name).sort(), [
-        'neotolis-workflow:ntgrill', 'neotolis-workflow:nttask',
+        'neotolis-workflow:ntgrill', 'neotolis-workflow:ntplan', 'neotolis-workflow:nttask',
       ]);
       assert.ok(skills?.every(({ enabled }) => enabled));
 
@@ -318,11 +318,14 @@ test('pinned Codex installs and discovers the staged plugin without a model call
       installPath = realpathSync(join(hook.sourcePath, '..', '..'));
       assert.deepEqual(filesUnder(installPath), [
         '.codex-plugin/plugin.json',
+    'agents/ntplan_critic.toml',
+    'agents/ntplan_researcher.toml',
         'hooks/hooks.json',
         'runtime/ntworkflow.mjs',
         'runtime/session-start.mjs',
         'skills/ntgrill/LICENSE',
     'skills/ntgrill/SKILL.md',
+    'skills/ntplan/SKILL.md',
     'skills/nttask/SKILL.md',
       ]);
       assert.equal(
@@ -347,6 +350,25 @@ test('pinned Codex installs and discovers the staged plugin without a model call
       const disabled = disabledResponse.data[0]?.hooks.find((entry) => entry.key === key);
       assert.ok(disabled !== undefined, JSON.stringify(disabledResponse));
       assert.equal(disabled.enabled, false);
+      // Pinned Codex discovers user-configured roles; plugin installation alone
+      // does not register agents/. Use its native config API, never a loader.
+      const roles = Object.fromEntries(['researcher', 'critic'].map(role => [
+        `ntplan_${role}`, { config_file: join(installPath, 'agents', `ntplan_${role}.toml`) },
+      ]));
+      await server.request(5, 'config/batchWrite', {
+        edits: [{ keyPath: 'agents', value: roles, mergeStrategy: 'upsert' }],
+        reloadUserConfig: true,
+      });
+      const configured = await server.request(6, 'config/read', { cwd: project, includeLayers: false });
+      const config = configured.config as JsonObject;
+      assert.deepEqual(config.agents, {
+        max_threads: null, max_depth: null, job_max_runtime_seconds: null, interrupt_message: null,
+        ...Object.fromEntries(Object.entries(roles).map(([name, definition]) => [
+          name, { ...definition, description: null, nickname_candidates: null },
+        ])),
+      });
+      const started = await server.request(7, 'thread/start', { cwd: project, ephemeral: true });
+      assert.equal((started.thread as JsonObject).cwd, project);
     } finally {
       await server.close();
     }

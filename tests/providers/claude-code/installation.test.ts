@@ -113,11 +113,14 @@ test('pinned Claude CLI validates, installs, lists, and discovers the staged plu
     assert.ok(installPath !== undefined);
     assert.deepEqual(filesUnder(installPath), [
       '.claude-plugin/plugin.json',
+    'agents/ntplan-critic.md',
+    'agents/ntplan-researcher.md',
       'hooks/hooks.json',
       'runtime/ntworkflow.mjs',
       'runtime/session-start.mjs',
       'skills/ntgrill/LICENSE',
     'skills/ntgrill/SKILL.md',
+    'skills/ntplan/SKILL.md',
     'skills/nttask/SKILL.md',
     ]);
 
@@ -126,8 +129,8 @@ test('pinned Claude CLI validates, installs, lists, and discovers the staged plu
       'plugin', 'details', 'neotolis-workflow@neotolis-local',
     );
     expectSuccess(details);
-    assert.match(details.stdout, /Skills \(2\)\s+ntgrill, nttask/);
-    assert.match(details.stdout, /Agents \(0\)/);
+    assert.match(details.stdout, /Skills \(3\)\s+ntgrill, ntplan, nttask/);
+    assert.match(details.stdout, /Agents \(2\)/);
     assert.match(details.stdout, /Hooks \(1\)\s+SessionStart/);
     assert.match(details.stdout, /MCP servers \(0\)/);
     assert.match(details.stdout, /LSP servers \(0\)/);
